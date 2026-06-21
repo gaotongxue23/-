@@ -95,6 +95,7 @@ export function extractContentFromSseText(text: string) {
 
 export async function readChatContent(upstream: Response) {
   const raw = await upstream.text();
+  if (/^\s*(?:<!doctype\s+html|<html)\b/i.test(raw)) return null;
   if (raw.trimStart().startsWith('data:')) return extractContentFromSseText(raw);
   try {
     return extractChatContent(JSON.parse(raw));

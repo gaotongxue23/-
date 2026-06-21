@@ -147,11 +147,12 @@ async function startNoStreamingMock() {
         url: req.url,
         body
       });
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       if (body.stream) {
-        res.end(JSON.stringify({}));
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<html><script>challenge()</script></html>');
         return;
       }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ choices: [{ message: { content: 'non-stream ok' } }] }));
     });
   });
