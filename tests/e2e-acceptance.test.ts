@@ -14,6 +14,7 @@ interface TestAppContext {
 
 interface MockCall {
   authorization?: string;
+  url?: string;
   body: any;
 }
 
@@ -67,6 +68,7 @@ async function startMockOpenAi() {
     req.on('end', () => {
       calls.push({
         authorization: req.headers.authorization,
+        url: req.url,
         body: JSON.parse(raw || '{}')
       });
       res.writeHead(200, {
@@ -91,6 +93,80 @@ async function startMockOpenAi() {
     baseUrl: `http://127.0.0.1:${port}/v1`,
     calls,
     server: server as Server
+  };
+}
+
+async function startAnyRouterStyleMock() {
+  const calls: MockCall[] = [];
+  const server = createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+    });
+    req.on('end', () => {
+      calls.push({
+        authorization: req.headers.authorization,
+        url: req.url,
+        body: JSON.parse(raw || '{}')
+      });
+      if (req.url === '/v1/chat/completions') {
+        res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: { message: 'route not found' } }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+  cleanup.push(
+    () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      })
+  );
+  return {
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    calls
+  };
+}
+
+async function startNoStreamingMock() {
+  const calls: MockCall[] = [];
+  const server = createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+    });
+    req.on('end', () => {
+      const body = JSON.parse(raw || '{}');
+      calls.push({
+        authorization: req.headers.authorization,
+        url: req.url,
+        body
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      if (body.stream) {
+        res.end(JSON.stringify({}));
+        return;
+      }
+      res.end(JSON.stringify({ choices: [{ message: { content: 'non-stream ok' } }] }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+  cleanup.push(
+    () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      })
+  );
+  return {
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    calls
   };
 }
 
@@ -344,5 +420,46 @@ describe('OpenSpec 端到端验收', () => {
     expect(response.status).toBe(200);
     const data = await response.json();
     expect(data.personas.map((persona: PersonaSkin) => persona.id)).toContain('builtin-daoist');
+  });
+
+  it('supports providers whose root chat/completions works while /v1 returns 404', async () => {
+    const { app } = await createTestApp();
+    const mock = await startAnyRouterStyleMock();
+
+    const response = await app.request('/api/proxy/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        base_url: mock.baseUrl,
+        key: 'secret-token',
+        model: 'mock-model'
+      })
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(mock.calls.map((call) => call.url)).toEqual(['/v1/chat/completions', '/chat/completions']);
+    expect(mock.calls[1].authorization).toBe('Bearer secret-token');
+    expect(mock.calls[1].body.stream).toBe(false);
+  });
+
+  it('retries without streaming when upstream returns no readable streamed content', async () => {
+    const { app } = await createTestApp();
+    const mock = await startNoStreamingMock();
+
+    const response = await app.request('/api/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        base_url: mock.baseUrl,
+        key: 'secret-token',
+        model: 'mock-model',
+        messages: [{ role: 'user', content: 'hello' }]
+      })
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('non-stream ok');
+    expect(mock.calls.map((call) => call.body.stream)).toEqual([true, false]);
   });
 });

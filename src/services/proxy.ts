@@ -12,6 +12,11 @@ function readOpenAiDelta(payload: any): string {
   return payload?.choices?.[0]?.delta?.content ?? payload?.choices?.[0]?.message?.content ?? payload?.content ?? '';
 }
 
+function formatProxyError(error: any, fallback: string) {
+  const message = error?.error ?? fallback;
+  return error?.detail ? `${message}：${error.detail}` : message;
+}
+
 export async function streamFortuneReading(request: StreamRequest): Promise<string> {
   const response = await fetch('/api/proxy', {
     method: 'POST',
@@ -28,7 +33,7 @@ export async function streamFortuneReading(request: StreamRequest): Promise<stri
 
   if (!response.ok || !response.body) {
     const error = await response.json().catch(() => ({ error: '解读请求失败' }));
-    throw new Error(error.error ?? '解读请求失败');
+    throw new Error(formatProxyError(error, '解读请求失败'));
   }
 
   const reader = response.body.getReader();
@@ -76,6 +81,6 @@ export async function testCredentials(credentials: LocalCredentials): Promise<vo
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: '连通性测试失败' }));
-    throw new Error(error.error ?? '连通性测试失败');
+    throw new Error(formatProxyError(error, '连通性测试失败'));
   }
 }

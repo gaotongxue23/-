@@ -1,12 +1,13 @@
 import {
   callUpstream,
-  classifyStatus,
   pipeWebStream,
   proxyCatchMessage,
   proxyCatchStatus,
+  readChatContent,
   readJson,
   sendJson,
   sendSseText,
+  upstreamErrorBody,
   validatePayload
 } from '../_vercel-proxy.js';
 
@@ -33,7 +34,7 @@ export default async function handler(req: any, res: any) {
   try {
     const upstream = await callUpstream(payload, true);
     if (!upstream.ok) {
-      sendJson(res, upstream.status, { error: classifyStatus(upstream.status), status: upstream.status });
+      sendJson(res, upstream.status, await upstreamErrorBody(upstream, payload.key));
       return;
     }
 
@@ -43,12 +44,16 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const json = await upstream.json().catch(() => null);
-    const content =
-      json?.choices?.[0]?.message?.content ??
-      json?.choices?.[0]?.delta?.content ??
-      (typeof json === 'string' ? json : JSON.stringify(json ?? {}));
-    sendSseText(res, String(content));
+    let content = await readChatContent(upstream);
+    if (!content) {
+      const retry = await callUpstream(payload, false);
+      if (!retry.ok) {
+        sendJson(res, retry.status, await upstreamErrorBody(retry, payload.key));
+        return;
+      }
+      content = await readChatContent(retry);
+    }
+    sendSseText(res, content ?? '');
   } catch (error: any) {
     sendJson(res, proxyCatchStatus(error), { error: proxyCatchMessage(error) });
   }

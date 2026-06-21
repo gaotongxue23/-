@@ -1,9 +1,9 @@
 import {
   callUpstream,
-  classifyStatus,
   proxyCatchMessage,
   readJson,
   sendJson,
+  upstreamErrorBody,
   validatePayload
 } from '../_vercel-proxy.js';
 
@@ -35,7 +35,7 @@ export default async function handler(req: any, res: any) {
   try {
     const upstream = await callUpstream(testPayload, false);
     if (!upstream.ok) {
-      sendJson(res, upstream.status, { error: classifyStatus(upstream.status), status: upstream.status });
+      sendJson(res, upstream.status, await upstreamErrorBody(upstream, testPayload.key));
       return;
     }
     sendJson(res, 200, { ok: true });

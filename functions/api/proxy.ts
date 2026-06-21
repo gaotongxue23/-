@@ -1,10 +1,11 @@
 import {
   callUpstream,
-  classifyStatus,
   createSseFromText,
   jsonError,
   proxyCatchMessage,
   proxyCatchStatus,
+  readChatContent,
+  upstreamErrorBody,
   validatePayload,
   type ProxyPayload
 } from './_proxy';
@@ -23,7 +24,7 @@ export async function onRequestPost(context: { request: Request }) {
   try {
     const upstream = await callUpstream(payload, true);
     if (!upstream.ok) {
-      return Response.json({ error: classifyStatus(upstream.status), status: upstream.status }, { status: upstream.status });
+      return Response.json(await upstreamErrorBody(upstream, payload.key), { status: upstream.status });
     }
 
     const contentType = upstream.headers.get('content-type') ?? '';
@@ -36,12 +37,15 @@ export async function onRequestPost(context: { request: Request }) {
       });
     }
 
-    const json = await upstream.json().catch(() => null);
-    const content =
-      json?.choices?.[0]?.message?.content ??
-      json?.choices?.[0]?.delta?.content ??
-      (typeof json === 'string' ? json : JSON.stringify(json ?? {}));
-    return new Response(createSseFromText(String(content)), {
+    let content = await readChatContent(upstream);
+    if (!content) {
+      const retry = await callUpstream(payload, false);
+      if (!retry.ok) {
+        return Response.json(await upstreamErrorBody(retry, payload.key), { status: retry.status });
+      }
+      content = await readChatContent(retry);
+    }
+    return new Response(createSseFromText(content ?? ''), {
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform'
@@ -51,4 +55,3 @@ export async function onRequestPost(context: { request: Request }) {
     return Response.json({ error: proxyCatchMessage(error) }, { status: proxyCatchStatus(error) });
   }
 }
-
