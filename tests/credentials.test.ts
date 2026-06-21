@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { normalizeProviderModel } from '../api/_vercel-proxy';
 import { normalizeCredentials } from '@/storage/credentials';
 
 describe('credentials normalization', () => {
@@ -20,5 +21,10 @@ describe('credentials normalization', () => {
         model: 'deepseek-reasoner'
       }).model
     ).toBe('deepseek-reasoner');
+  });
+
+  it('normalizes DeepSeek models in the proxy layer too', () => {
+    expect(normalizeProviderModel('https://api.deepseek.com', 'gpt-4o-mini')).toBe('deepseek-chat');
+    expect(normalizeProviderModel('https://api.deepseek.com', 'deepseek-reasoner')).toBe('deepseek-reasoner');
   });
 });

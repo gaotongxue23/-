@@ -1,4 +1,5 @@
 const PROXY_TIMEOUT_MS = 60_000;
+const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini';
 
 export interface ProxyPayload {
   base_url?: string;
@@ -39,6 +40,19 @@ export function validatePayload(payload: ProxyPayload) {
   if (!payload.model?.trim()) return '缺少模型名称。';
   if (!Array.isArray(payload.messages) || payload.messages.length === 0) return '缺少 messages。';
   return null;
+}
+
+export function normalizeProviderModel(baseUrl: string, model: string) {
+  const trimmedModel = model.trim();
+  try {
+    const hostname = new URL(baseUrl.trim()).hostname.toLowerCase();
+    if ((hostname === 'api.deepseek.com' || hostname.endsWith('.deepseek.com')) && trimmedModel === OPENAI_DEFAULT_MODEL) {
+      return 'deepseek-chat';
+    }
+  } catch {
+    // URL validation happens before upstream calls.
+  }
+  return trimmedModel;
 }
 
 export function jsonError(message: string, status = 400) {
@@ -103,7 +117,7 @@ function chatRequestInit(payload: ProxyPayload, stream: boolean, signal: AbortSi
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: payload.model,
+      model: normalizeProviderModel(payload.base_url!, payload.model!),
       messages: payload.messages,
       temperature: Number.isFinite(payload.temperature) ? payload.temperature : 0.7,
       stream
