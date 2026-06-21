@@ -1,4 +1,5 @@
 import type { LlmMessage } from '@/persona/prompt';
+import { normalizeCredentials } from '@/storage/credentials';
 import type { LocalCredentials } from '@/storage/types';
 
 export interface StreamRequest {
@@ -18,13 +19,14 @@ function formatProxyError(error: any, fallback: string) {
 }
 
 export async function streamFortuneReading(request: StreamRequest): Promise<string> {
+  const credentials = normalizeCredentials(request.credentials);
   const response = await fetch('/api/proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      base_url: request.credentials.baseUrl,
-      key: request.credentials.apiKey,
-      model: request.credentials.model,
+      base_url: credentials.baseUrl,
+      key: credentials.apiKey,
+      model: credentials.model,
       messages: request.messages,
       temperature: 0.72
     }),
@@ -69,13 +71,14 @@ export async function streamFortuneReading(request: StreamRequest): Promise<stri
 }
 
 export async function testCredentials(credentials: LocalCredentials): Promise<void> {
+  const normalized = normalizeCredentials(credentials);
   const response = await fetch('/api/proxy/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      base_url: credentials.baseUrl,
-      key: credentials.apiKey,
-      model: credentials.model,
+      base_url: normalized.baseUrl,
+      key: normalized.apiKey,
+      model: normalized.model,
       messages: [{ role: 'user', content: '请只回复 ok' }]
     })
   });

@@ -1,6 +1,24 @@
 import type { LocalCredentials } from './types';
 
 const KEY = 'soothsay-byok';
+const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini';
+
+export function normalizeCredentials(credentials: LocalCredentials): LocalCredentials {
+  const baseUrl = credentials.baseUrl.trim();
+  const apiKey = credentials.apiKey.trim();
+  let model = credentials.model.trim() || OPENAI_DEFAULT_MODEL;
+
+  try {
+    const hostname = new URL(baseUrl).hostname.toLowerCase();
+    if ((hostname === 'api.deepseek.com' || hostname.endsWith('.deepseek.com')) && model === OPENAI_DEFAULT_MODEL) {
+      model = 'deepseek-chat';
+    }
+  } catch {
+    // validateCredentials reports malformed URLs; keep normalization side-effect free.
+  }
+
+  return { baseUrl, apiKey, model };
+}
 
 export function getCredentials(): LocalCredentials | null {
   const raw = localStorage.getItem(KEY);
@@ -8,23 +26,24 @@ export function getCredentials(): LocalCredentials | null {
   try {
     const parsed = JSON.parse(raw) as Partial<LocalCredentials>;
     if (!parsed.baseUrl || !parsed.apiKey || !parsed.model) return null;
-    return {
+    return normalizeCredentials({
       baseUrl: parsed.baseUrl,
       apiKey: parsed.apiKey,
       model: parsed.model
-    };
+    });
   } catch {
     return null;
   }
 }
 
 export function saveCredentials(credentials: LocalCredentials) {
+  const normalized = normalizeCredentials(credentials);
   localStorage.setItem(
     KEY,
     JSON.stringify({
-      baseUrl: credentials.baseUrl.trim(),
-      apiKey: credentials.apiKey.trim(),
-      model: credentials.model.trim() || 'gpt-4o-mini'
+      baseUrl: normalized.baseUrl,
+      apiKey: normalized.apiKey,
+      model: normalized.model
     })
   );
 }

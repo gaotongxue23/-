@@ -41,7 +41,7 @@ import {
   uploadRoleImage,
   verifyAdmin
 } from '@/services/admin';
-import { clearCredentials, getCredentials, saveCredentials, validateCredentials } from '@/storage/credentials';
+import { clearCredentials, getCredentials, normalizeCredentials, saveCredentials, validateCredentials } from '@/storage/credentials';
 import {
   appendRoleMessage,
   clearRoleHistory,
@@ -1090,6 +1090,7 @@ function openSettings() {
 }
 
 async function persistCredentials() {
+  Object.assign(credentialsDraft, normalizeCredentials(credentialsDraft));
   const error = validateCredentials(credentialsDraft);
   if (error) {
     credentialsStatus.value = error;
@@ -1100,6 +1101,7 @@ async function persistCredentials() {
 }
 
 async function runCredentialTest() {
+  Object.assign(credentialsDraft, normalizeCredentials(credentialsDraft));
   const error = validateCredentials(credentialsDraft);
   if (error) {
     credentialsStatus.value = error;
@@ -1137,6 +1139,7 @@ async function requestReading(task: FortuneTask, question?: string) {
     return;
   }
 
+  Object.assign(credentialsDraft, normalizeCredentials(credentialsDraft));
   streaming.value = true;
   readingText.value = '';
   const currentHistory = roleHistory.value ?? (await getRoleHistory(selectedPersona.value.id));
