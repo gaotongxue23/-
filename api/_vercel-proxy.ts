@@ -109,6 +109,7 @@ function chatRequestInit(payload: ProxyPayload, stream: boolean, signal: AbortSi
     method: 'POST',
     headers: {
       Authorization: `Bearer ${payload.key}`,
+      Accept: stream ? 'text/event-stream, application/json' : 'application/json',
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
@@ -154,6 +155,13 @@ export async function upstreamErrorBody(upstream: Response, key?: string) {
     error: classifyStatus(upstream.status),
     status: upstream.status,
     ...(detail ? { detail } : {})
+  };
+}
+
+export function unreadableUpstreamBody() {
+  return {
+    error: '上游返回了无法解析的内容，可能是 HTML 防护页、空响应，或该服务不支持服务器代理调用。',
+    status: 502
   };
 }
 

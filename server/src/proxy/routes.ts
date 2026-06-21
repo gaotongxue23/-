@@ -99,6 +99,7 @@ function chatRequestInit(payload: ProxyPayload, stream: boolean, signal: AbortSi
     method: 'POST',
     headers: {
       Authorization: `Bearer ${payload.key}`,
+      Accept: stream ? 'text/event-stream, application/json' : 'application/json',
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
@@ -147,6 +148,13 @@ async function upstreamErrorBody(upstream: Response, key?: string) {
   };
 }
 
+function unreadableUpstreamBody() {
+  return {
+    error: '上游返回了无法解析的内容，可能是 HTML 防护页、空响应，或该服务不支持服务器代理调用。',
+    status: 502
+  };
+}
+
 proxyRoutes.post('/proxy', async (c) => {
   let payload: ProxyPayload;
   try {
@@ -183,6 +191,9 @@ proxyRoutes.post('/proxy', async (c) => {
       }
       content = await readChatContent(retry);
     }
+    if (!content) {
+      return c.json(unreadableUpstreamBody(), 502);
+    }
     return new Response(createSseFromText(content ?? ''), {
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',
@@ -214,6 +225,9 @@ proxyRoutes.post('/proxy/test', async (c) => {
     const upstream = await callUpstream(testPayload, false);
     if (!upstream.ok) {
       return c.json(await upstreamErrorBody(upstream, testPayload.key), upstream.status as any);
+    }
+    if (!(await readChatContent(upstream))) {
+      return c.json(unreadableUpstreamBody(), 502);
     }
     return c.json({ ok: true });
   } catch (error: any) {

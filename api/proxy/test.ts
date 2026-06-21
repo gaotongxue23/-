@@ -3,6 +3,8 @@ import {
   proxyCatchMessage,
   readJson,
   sendJson,
+  readChatContent,
+  unreadableUpstreamBody,
   upstreamErrorBody,
   validatePayload
 } from '../_vercel-proxy.js';
@@ -36,6 +38,10 @@ export default async function handler(req: any, res: any) {
     const upstream = await callUpstream(testPayload, false);
     if (!upstream.ok) {
       sendJson(res, upstream.status, await upstreamErrorBody(upstream, testPayload.key));
+      return;
+    }
+    if (!(await readChatContent(upstream))) {
+      sendJson(res, 502, unreadableUpstreamBody());
       return;
     }
     sendJson(res, 200, { ok: true });

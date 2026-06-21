@@ -5,6 +5,7 @@ import {
   proxyCatchMessage,
   proxyCatchStatus,
   readChatContent,
+  unreadableUpstreamBody,
   upstreamErrorBody,
   validatePayload,
   type ProxyPayload
@@ -44,6 +45,9 @@ export async function onRequestPost(context: { request: Request }) {
         return Response.json(await upstreamErrorBody(retry, payload.key), { status: retry.status });
       }
       content = await readChatContent(retry);
+    }
+    if (!content) {
+      return Response.json(unreadableUpstreamBody(), { status: 502 });
     }
     return new Response(createSseFromText(content ?? ''), {
       headers: {

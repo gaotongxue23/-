@@ -7,6 +7,7 @@ import {
   readJson,
   sendJson,
   sendSseText,
+  unreadableUpstreamBody,
   upstreamErrorBody,
   validatePayload
 } from '../_vercel-proxy.js';
@@ -52,6 +53,10 @@ export default async function handler(req: any, res: any) {
         return;
       }
       content = await readChatContent(retry);
+    }
+    if (!content) {
+      sendJson(res, 502, unreadableUpstreamBody());
+      return;
     }
     sendSseText(res, content ?? '');
   } catch (error: any) {
