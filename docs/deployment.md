@@ -1,4 +1,4 @@
-# Soothsay 部署说明
+# 八字命理学部署说明
 
 ## 环境变量
 
@@ -13,19 +13,19 @@
 ## 构建镜像
 
 ```bash
-docker build -t soothsay:latest .
+docker build -t bazi-mingli:latest .
 ```
 
 ## 单命令启动
 
 ```bash
 docker run -d \
-  --name soothsay \
+  --name bazi-mingli \
   -p 8787:8787 \
-  -v soothsay-data:/data \
+  -v bazi-mingli-data:/data \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD='change-me' \
-  soothsay:latest
+  bazi-mingli:latest
 ```
 
 首次启动后，终端用户可直接看到三位内置角色：云松道长、明澈法师、玄璃姐（心理学派）。后台创建的自定义角色与上传图片会写入 `/data` 卷，容器重启后保留。
@@ -36,12 +36,12 @@ docker run -d \
 
 ```bash
 docker run -d \
-  --name soothsay \
+  --name bazi-mingli \
   -p 8787:8787 \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD='change-me' \
   -e SOOTHSAY_PG_DSN='postgres://user:password@host:5432/db?sslmode=require' \
-  soothsay:latest
+  bazi-mingli:latest
 ```
 
 启用 DSN 后，服务会自动创建以下表：

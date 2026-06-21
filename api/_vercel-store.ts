@@ -585,7 +585,7 @@ export function requireAdmin(req: any, res: any) {
   }
   const credentials = parseBasicAuth(req.headers?.authorization);
   if (!credentials || !safeEqual(credentials.username, expected.username) || !safeEqual(credentials.password, expected.password)) {
-    sendJson(res, 401, { error: '未授权，请使用有效 admin 凭据。' }, { 'WWW-Authenticate': 'Basic realm="Soothsay Admin"' });
+    sendJson(res, 401, { error: '未授权，请使用有效 admin 凭据。' }, { 'WWW-Authenticate': 'Basic realm="Bazi Mingli Admin"' });
     return false;
   }
   return true;

@@ -9,4 +9,4 @@ const app = createApp();
 
 serve({ fetch: app.fetch, port });
 
-console.info(`Soothsay 服务已启动：http://localhost:${port}`);
+console.info(`八字命理学服务已启动：http://localhost:${port}`);

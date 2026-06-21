@@ -2,7 +2,7 @@
 
 ## 项目结构与模块组织
 
-Soothsay 是 pnpm 管理的 Vue 3 + TypeScript + Vite 前端和 Hono Node 服务端项目。前端源码位于 `src/`：`bazi/` 负责八字排盘核心逻辑，`persona/` 负责提示词构建，`services/` 封装 API 调用，`storage/` 处理浏览器本地存储，`App.vue` 与 `styles.css` 承载主界面。服务端位于 `server/src/`，包含 `admin/`、`persona/`、`proxy/`、`storage/` 与 `shared/`。测试集中在 `tests/`，静态默认头像和背景在 `public/defaults/`，部署文档在 `docs/`。
+八字命理学是 pnpm 管理的 Vue 3 + TypeScript + Vite 前端和 Hono Node 服务端项目，基于 Soothsay 模式二次开发。前端源码位于 `src/`：`bazi/` 负责八字排盘核心逻辑，`persona/` 负责提示词构建，`services/` 封装 API 调用，`storage/` 处理浏览器本地存储，`App.vue` 与 `styles.css` 承载主界面。服务端位于 `server/src/`，包含 `admin/`、`persona/`、`proxy/`、`storage/` 与 `shared/`。测试集中在 `tests/`，静态默认头像和背景在 `public/defaults/`，部署文档在 `docs/`。
 
 ## 构建、测试与开发命令
 

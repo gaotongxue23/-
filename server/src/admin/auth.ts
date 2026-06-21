@@ -44,7 +44,7 @@ export const requireAdmin: MiddlewareHandler = async (c, next) => {
   }
   if (!isAdminAuthorized(c)) {
     return c.json({ error: '未授权，请使用有效 admin 凭据。' }, 401, {
-      'WWW-Authenticate': 'Basic realm="Soothsay Admin"'
+      'WWW-Authenticate': 'Basic realm="Bazi Mingli Admin"'
     });
   }
   await next();
