@@ -1,0 +1,37 @@
+import {
+  callUpstream,
+  classifyStatus,
+  jsonError,
+  proxyCatchMessage,
+  proxyCatchStatus,
+  validatePayload,
+  type ProxyPayload
+} from '../_proxy';
+
+export async function onRequestPost(context: { request: Request }) {
+  let payload: ProxyPayload;
+  try {
+    payload = await context.request.json();
+  } catch {
+    return jsonError('请求体必须是 JSON。');
+  }
+
+  const testPayload: ProxyPayload = {
+    ...payload,
+    messages: [{ role: 'user', content: '请只回复 ok' }],
+    temperature: 0
+  };
+  const validationError = validatePayload(testPayload);
+  if (validationError) return jsonError(validationError);
+
+  try {
+    const upstream = await callUpstream(testPayload, false);
+    if (!upstream.ok) {
+      return Response.json({ error: classifyStatus(upstream.status), status: upstream.status }, { status: upstream.status });
+    }
+    return Response.json({ ok: true });
+  } catch (error) {
+    return Response.json({ error: proxyCatchMessage(error) }, { status: proxyCatchStatus(error) });
+  }
+}
+
