@@ -1,5 +1,6 @@
 import {
   callUpstream,
+  clientErrorStatus,
   createSseFromText,
   jsonError,
   proxyCatchMessage,
@@ -25,7 +26,7 @@ export async function onRequestPost(context: { request: Request }) {
   try {
     const upstream = await callUpstream(payload, true);
     if (!upstream.ok) {
-      return Response.json(await upstreamErrorBody(upstream, payload.key), { status: upstream.status });
+      return Response.json(await upstreamErrorBody(upstream, payload.key), { status: clientErrorStatus(upstream.status) });
     }
 
     const contentType = upstream.headers.get('content-type') ?? '';
@@ -42,12 +43,12 @@ export async function onRequestPost(context: { request: Request }) {
     if (!content) {
       const retry = await callUpstream(payload, false);
       if (!retry.ok) {
-        return Response.json(await upstreamErrorBody(retry, payload.key), { status: retry.status });
+        return Response.json(await upstreamErrorBody(retry, payload.key), { status: clientErrorStatus(retry.status) });
       }
       content = await readChatContent(retry);
     }
     if (!content) {
-      return Response.json(unreadableUpstreamBody(), { status: 502 });
+      return Response.json(unreadableUpstreamBody(), { status: 424 });
     }
     return new Response(createSseFromText(content ?? ''), {
       headers: {

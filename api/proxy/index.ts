@@ -1,5 +1,6 @@
 import {
   callUpstream,
+  clientErrorStatus,
   pipeWebStream,
   proxyCatchMessage,
   proxyCatchStatus,
@@ -35,7 +36,7 @@ export default async function handler(req: any, res: any) {
   try {
     const upstream = await callUpstream(payload, true);
     if (!upstream.ok) {
-      sendJson(res, upstream.status, await upstreamErrorBody(upstream, payload.key));
+      sendJson(res, clientErrorStatus(upstream.status), await upstreamErrorBody(upstream, payload.key));
       return;
     }
 
@@ -49,13 +50,13 @@ export default async function handler(req: any, res: any) {
     if (!content) {
       const retry = await callUpstream(payload, false);
       if (!retry.ok) {
-        sendJson(res, retry.status, await upstreamErrorBody(retry, payload.key));
+        sendJson(res, clientErrorStatus(retry.status), await upstreamErrorBody(retry, payload.key));
         return;
       }
       content = await readChatContent(retry);
     }
     if (!content) {
-      sendJson(res, 502, unreadableUpstreamBody());
+      sendJson(res, 424, unreadableUpstreamBody());
       return;
     }
     sendSseText(res, content ?? '');

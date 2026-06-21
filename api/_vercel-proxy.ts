@@ -158,10 +158,14 @@ export async function upstreamErrorBody(upstream: Response, key?: string) {
   };
 }
 
+export function clientErrorStatus(status: number) {
+  return status >= 500 ? 424 : status;
+}
+
 export function unreadableUpstreamBody() {
   return {
     error: '上游返回了无法解析的内容，可能是 HTML 防护页、空响应，或该服务不支持服务器代理调用。',
-    status: 502
+    status: 424
   };
 }
 
@@ -194,7 +198,7 @@ export function sendSseText(res: any, content: string) {
 }
 
 export function proxyCatchStatus(error: any) {
-  return error?.name === 'AbortError' ? 504 : 502;
+  return error?.name === 'AbortError' ? 408 : 424;
 }
 
 export function proxyCatchMessage(error: any) {

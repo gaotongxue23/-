@@ -148,10 +148,14 @@ async function upstreamErrorBody(upstream: Response, key?: string) {
   };
 }
 
+function clientErrorStatus(status: number) {
+  return status >= 500 ? 424 : status;
+}
+
 function unreadableUpstreamBody() {
   return {
     error: '上游返回了无法解析的内容，可能是 HTML 防护页、空响应，或该服务不支持服务器代理调用。',
-    status: 502
+    status: 424
   };
 }
 
@@ -169,7 +173,7 @@ proxyRoutes.post('/proxy', async (c) => {
   try {
     const upstream = await callUpstream(payload, true);
     if (!upstream.ok) {
-      return c.json(await upstreamErrorBody(upstream, payload.key), upstream.status as any);
+      return c.json(await upstreamErrorBody(upstream, payload.key), clientErrorStatus(upstream.status) as any);
     }
 
     const contentType = upstream.headers.get('content-type') ?? '';
@@ -187,12 +191,12 @@ proxyRoutes.post('/proxy', async (c) => {
     if (!content) {
       const retry = await callUpstream(payload, false);
       if (!retry.ok) {
-        return c.json(await upstreamErrorBody(retry, payload.key), retry.status as any);
+        return c.json(await upstreamErrorBody(retry, payload.key), clientErrorStatus(retry.status) as any);
       }
       content = await readChatContent(retry);
     }
     if (!content) {
-      return c.json(unreadableUpstreamBody(), 502);
+      return c.json(unreadableUpstreamBody(), 424);
     }
     return new Response(createSseFromText(content ?? ''), {
       headers: {
@@ -202,7 +206,7 @@ proxyRoutes.post('/proxy', async (c) => {
     });
   } catch (error: any) {
     const message = error?.name === 'AbortError' ? '上游请求超时' : '无法连接上游，请检查 base_url。';
-    return c.json({ error: message }, error?.name === 'AbortError' ? 504 : 502);
+    return c.json({ error: message }, error?.name === 'AbortError' ? 408 : 424);
   }
 });
 
@@ -224,13 +228,13 @@ proxyRoutes.post('/proxy/test', async (c) => {
   try {
     const upstream = await callUpstream(testPayload, false);
     if (!upstream.ok) {
-      return c.json(await upstreamErrorBody(upstream, testPayload.key), upstream.status as any);
+      return c.json(await upstreamErrorBody(upstream, testPayload.key), clientErrorStatus(upstream.status) as any);
     }
     if (!(await readChatContent(upstream))) {
-      return c.json(unreadableUpstreamBody(), 502);
+      return c.json(unreadableUpstreamBody(), 424);
     }
     return c.json({ ok: true });
   } catch (error: any) {
-    return c.json({ error: error?.name === 'AbortError' ? '上游请求超时' : '无法连接上游，请检查 base_url。' }, 502);
+    return c.json({ error: error?.name === 'AbortError' ? '上游请求超时' : '无法连接上游，请检查 base_url。' }, error?.name === 'AbortError' ? 408 : 424);
   }
 });

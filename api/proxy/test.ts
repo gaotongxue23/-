@@ -1,5 +1,6 @@
 import {
   callUpstream,
+  clientErrorStatus,
   proxyCatchMessage,
   readJson,
   sendJson,
@@ -37,15 +38,15 @@ export default async function handler(req: any, res: any) {
   try {
     const upstream = await callUpstream(testPayload, false);
     if (!upstream.ok) {
-      sendJson(res, upstream.status, await upstreamErrorBody(upstream, testPayload.key));
+      sendJson(res, clientErrorStatus(upstream.status), await upstreamErrorBody(upstream, testPayload.key));
       return;
     }
     if (!(await readChatContent(upstream))) {
-      sendJson(res, 502, unreadableUpstreamBody());
+      sendJson(res, 424, unreadableUpstreamBody());
       return;
     }
     sendJson(res, 200, { ok: true });
   } catch (error: any) {
-    sendJson(res, error?.name === 'AbortError' ? 504 : 502, { error: proxyCatchMessage(error) });
+    sendJson(res, error?.name === 'AbortError' ? 408 : 424, { error: proxyCatchMessage(error) });
   }
 }
