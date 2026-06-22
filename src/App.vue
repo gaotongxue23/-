@@ -26,8 +26,9 @@ import {
   Wand2
 } from 'lucide-vue-next';
 import { createBaziChart } from '@/bazi/engine';
+import { STEM_ELEMENTS } from '@/bazi/relations';
 import { localeStorageKey, normalizeLocale, translate, type Locale, type TranslationKey } from '@/i18n';
-import type { BaziChart, BirthDateTimeInput, ChartFactor, FiveElement, LuckCycle, PillarName } from '@/bazi/types';
+import type { BaziChart, BirthDateTimeInput, ChartFactor, FiveElement, LuckCycle, Pillar, PillarName } from '@/bazi/types';
 import { buildFortuneMessages, buildPersonaGenerationMessages, type FortuneTask, type PersonaGenerationDraft } from '@/persona/prompt';
 import { fetchPersonas } from '@/services/personas';
 import { streamFortuneReading, testCredentials } from '@/services/proxy';
@@ -90,6 +91,13 @@ const PILLAR_LABELS: Record<PillarName, string> = {
 };
 
 const FIVE_ELEMENTS: FiveElement[] = ['木', '火', '土', '金', '水'];
+const ELEMENT_VISUALS = {
+  木: { color: '#16a34a', soft: '#dcfce7', tint: '#f0fdf4' },
+  火: { color: '#dc2626', soft: '#fee2e2', tint: '#fff1f2' },
+  土: { color: '#a16207', soft: '#fef3c7', tint: '#fffbeb' },
+  金: { color: '#d97706', soft: '#ffedd5', tint: '#fff7ed' },
+  水: { color: '#2563eb', soft: '#dbeafe', tint: '#eff6ff' }
+} satisfies Record<FiveElement, { color: string; soft: string; tint: string }>;
 const appVersion = __APP_VERSION__;
 const locale = ref<Locale>('zh-CN');
 
@@ -402,6 +410,38 @@ function formatChartFactor(factor?: ChartFactor) {
 
 function formatRelationPillars(names: PillarName[]) {
   return names.map((name) => PILLAR_LABELS[name]).join('、');
+}
+
+function elementVisualStyle(element: FiveElement) {
+  const visual = ELEMENT_VISUALS[element];
+  return {
+    '--element-color': visual.color,
+    '--element-soft': visual.soft,
+    '--element-tint': visual.tint
+  };
+}
+
+function strengthVisualStyle(element: FiveElement, percent: number) {
+  return {
+    ...elementVisualStyle(element),
+    '--strength-percent': `${percent}%`
+  };
+}
+
+function getStemElement(stem: string) {
+  return STEM_ELEMENTS[stem] ?? '土';
+}
+
+function hiddenStemItems(pillar: Pick<Pillar, 'hiddenGan' | 'hiddenGanTenGods'>) {
+  return pillar.hiddenGan.map((stem, index) => ({
+    stem,
+    tenGod: pillar.hiddenGanTenGods[index] ?? '',
+    element: getStemElement(stem)
+  }));
+}
+
+function formatEnergyValue(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function engineById(id: string) {
@@ -2029,8 +2069,14 @@ onMounted(async () => {
         <div v-if="chart" class="mobile-pillar-strip">
           <span v-for="pillar in pillarRows" :key="pillar.name">
             <small>{{ pillar.label }}</small>
-            <strong>{{ pillar.ganZhi }}</strong>
-            <em>{{ pillar.ganElement }}{{ pillar.zhiElement }}</em>
+            <strong class="mobile-ganzhi">
+              <b :style="elementVisualStyle(pillar.ganElement)">{{ pillar.gan }}</b>
+              <b :style="elementVisualStyle(pillar.zhiElement)">{{ pillar.zhi }}</b>
+            </strong>
+            <em>
+              <i :style="elementVisualStyle(pillar.ganElement)"></i>{{ pillar.ganElement }}
+              <i :style="elementVisualStyle(pillar.zhiElement)"></i>{{ pillar.zhiElement }}
+            </em>
           </span>
         </div>
         <div v-else class="mobile-empty-card">
@@ -2171,16 +2217,42 @@ onMounted(async () => {
           <div v-if="chart" class="chart-content">
             <div class="pillar-grid">
               <article v-for="pillar in pillarRows" :key="pillar.name" class="pillar-cell">
-                <span>{{ pillar.label }}</span>
-                <strong>{{ pillar.ganZhi }}</strong>
-                <small>{{ pillar.tenGodOfGan }} · {{ pillar.naYin }}</small>
-                <small>藏干 {{ pillar.hiddenGan.join('、') }}</small>
-                <small v-if="pillar.xunKong">空亡 {{ pillar.xunKong }}</small>
+                <div class="pillar-cell-head">
+                  <span>{{ pillar.label }}</span>
+                  <small>{{ pillar.tenGodOfGan }}</small>
+                </div>
+                <div class="pillar-ganzhi" :aria-label="pillar.ganZhi">
+                  <b :style="elementVisualStyle(pillar.ganElement)">
+                    <small>天干</small>
+                    {{ pillar.gan }}
+                  </b>
+                  <b :style="elementVisualStyle(pillar.zhiElement)">
+                    <small>地支</small>
+                    {{ pillar.zhi }}
+                  </b>
+                </div>
+                <div class="pillar-line">
+                  <small>纳音</small>
+                  <span>{{ pillar.naYin }}</span>
+                </div>
+                <div class="hidden-stem-list">
+                  <small>藏干</small>
+                  <b v-for="item in hiddenStemItems(pillar)" :key="`${pillar.name}-${item.stem}`" :style="elementVisualStyle(item.element)">
+                    {{ item.stem }}<em v-if="item.tenGod">{{ item.tenGod }}</em>
+                  </b>
+                </div>
+                <div v-if="pillar.xunKong" class="pillar-line">
+                  <small>空亡</small>
+                  <span>{{ pillar.xunKong }}</span>
+                </div>
                 <small v-if="pillar.shenSha?.length" class="pillar-shensha">神煞 {{ pillar.shenSha.join('、') }}</small>
               </article>
             </div>
             <div class="stats-grid">
-              <span v-for="(value, key) in chart.fiveElementStats" :key="key">{{ key }} {{ value }}</span>
+              <span v-for="item in strengthRows" :key="`stat-${item.element}`" :style="elementVisualStyle(item.element)">
+                <i></i>
+                {{ item.element }} {{ chart.fiveElementStats[item.element] }}
+              </span>
             </div>
             <p class="note-line">日主 {{ chart.dayMaster.gan }}{{ chart.dayMaster.element }} · {{ formatLuckSummary(chart.luck) }}</p>
             <section class="chart-section">
@@ -2207,13 +2279,25 @@ onMounted(async () => {
               <p class="note-line">
                 司令 {{ chart.strength.monthCommand.stem }}{{ chart.strength.monthCommand.level }} · 日主{{ chart.strength.dayMasterState }} · {{ chart.strength.dayMasterStrength.score }}分
               </p>
-              <div class="strength-list">
-                <div v-for="item in strengthRows" :key="item.element" class="strength-row">
-                  <span>{{ item.element }}</span>
-                  <div class="strength-bar" aria-hidden="true">
-                    <i :style="{ width: `${item.percent}%` }"></i>
+              <div class="strength-card">
+                <div class="strength-list">
+                  <div v-for="item in strengthRows" :key="item.element" class="strength-row" :style="strengthVisualStyle(item.element, item.percent)">
+                    <span class="strength-name">
+                      <i></i>
+                      {{ item.element }}
+                    </span>
+                    <div class="strength-bar" aria-hidden="true">
+                      <i></i>
+                      <b>{{ item.percent }}%</b>
+                    </div>
+                    <small>{{ item.state }} · {{ formatEnergyValue(item.energy) }}</small>
                   </div>
-                  <small>{{ item.percent }}% · {{ item.energy }} · {{ item.state }}</small>
+                </div>
+                <div class="season-state-strip" aria-label="五行旺衰状态">
+                  <span v-for="item in strengthRows" :key="`state-${item.element}`" :style="elementVisualStyle(item.element)">
+                    <i></i>
+                    {{ item.element }} <strong>{{ item.state }}</strong>
+                  </span>
                 </div>
               </div>
             </section>
