@@ -125,6 +125,7 @@ const readingText = ref('');
 const streaming = ref(false);
 const drawingLot = ref(false);
 const followQuestion = ref('');
+const answerBoxRef = ref<HTMLDivElement | null>(null);
 const factDraft = ref('');
 const eventYearDraft = ref(new Date().getFullYear());
 const eventTitleDraft = ref('');
@@ -1168,9 +1169,20 @@ function removeCredentials() {
   credentialsStatus.value = '凭据已从本机浏览器移除';
 }
 
+async function scrollAnswerToBottom() {
+  await nextTick();
+  const element = answerBoxRef.value;
+  if (element) {
+    element.scrollTop = element.scrollHeight;
+  }
+}
+
 async function requestReading(task: FortuneTask, question?: string) {
   if (!chart.value || !selectedPersona.value) {
     setMessage('请先选择大师并生成命盘');
+    return;
+  }
+  if (task === 'follow_up' && !question?.trim()) {
     return;
   }
   const credentialError = validateCredentials(credentialsDraft);
@@ -1196,19 +1208,23 @@ async function requestReading(task: FortuneTask, question?: string) {
   const userText = messages[messages.length - 1].content;
 
   try {
-    await appendRoleMessage(selectedPersona.value.id, { role: 'user', content: userText });
+    roleHistory.value = await appendRoleMessage(selectedPersona.value.id, { role: 'user', content: userText });
+    followQuestion.value = '';
+    await scrollAnswerToBottom();
     const fullText = await streamFortuneReading({
       credentials: credentialsDraft,
       messages,
       onDelta(delta) {
         readingText.value += delta;
+        void scrollAnswerToBottom();
       }
     });
     roleHistory.value = await appendRoleMessage(selectedPersona.value.id, {
       role: 'assistant',
       content: fullText
     });
-    followQuestion.value = '';
+    readingText.value = '';
+    await scrollAnswerToBottom();
   } catch (error: any) {
     setMessage(error?.message ?? '解读失败');
   } finally {
@@ -2410,14 +2426,16 @@ onMounted(async () => {
               {{ t('home.exportMarkdown') }}
             </button>
           </div>
-          <div class="answer-box">
-            <div v-if="streaming || readingText" class="markdown-frame">
-              <MarkdownRenderer :blocks="activeReadingBlocks" />
-              <span v-if="streaming" class="caret markdown-caret"></span>
-            </div>
-            <article v-else-if="roleHistory?.messages.length" v-for="message in roleHistory.messages.slice(-6)" :key="message.id" :class="['chat-message', `chat-${message.role}`]">
-              <MarkdownRenderer :blocks="parseMarkdown(message.content)" />
-            </article>
+          <div ref="answerBoxRef" class="answer-box">
+            <template v-if="historyMessages.length || readingText">
+              <article v-for="message in historyMessages.slice(-10)" :key="message.id" :class="['chat-message', `chat-${message.role}`]">
+                <MarkdownRenderer :blocks="parseMarkdown(message.content)" />
+              </article>
+              <article v-if="readingText" class="chat-message chat-assistant chat-streaming">
+                <MarkdownRenderer :blocks="activeReadingBlocks" />
+                <span v-if="streaming" class="caret markdown-caret"></span>
+              </article>
+            </template>
             <p v-else class="empty-state">命盘生成后可请求解读；没有 key 也不影响排盘。</p>
           </div>
           <div class="follow-row" role="group" aria-label="追问输入">

@@ -2399,6 +2399,9 @@ button:focus-visible,
 }
 
 .answer-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   flex: 1;
   min-height: 0;
   max-height: none;
@@ -2552,11 +2555,8 @@ button:focus-visible,
 }
 
 .chat-message {
-  margin: 0 0 10px;
-}
-
-.chat-message:last-child {
-  margin-bottom: 0;
+  width: fit-content;
+  max-width: min(86%, 720px);
 }
 
 .chat-message .markdown-body {
@@ -2573,16 +2573,25 @@ button:focus-visible,
 }
 
 .chat-user {
+  align-self: flex-end;
   padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--bg-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: var(--radius-md) var(--radius-md) var(--radius-sm) var(--radius-md);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  box-shadow: var(--shadow-line);
 }
 
 .chat-assistant {
+  align-self: flex-start;
   padding: 10px 12px;
-  border-radius: var(--radius-md);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md) var(--radius-md) var(--radius-md) var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--shadow-line);
+}
+
+.chat-streaming {
+  min-width: min(240px, 86%);
 }
 
 .caret {
