@@ -1611,135 +1611,197 @@ button:focus-visible,
 }
 
 .pillar-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.pillar-cell {
-  display: flex;
-  min-height: 186px;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  display: block;
+  min-width: 0;
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 253, 248, 0.94)),
-    var(--surface-raised);
+  background: rgba(255, 253, 248, 0.78);
 }
 
-.pillar-cell-head,
-.pillar-line {
-  display: flex;
+.pillar-table-row {
+  display: grid;
   min-width: 0;
+  grid-template-columns: 52px repeat(4, minmax(0, 1fr));
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  border-bottom: 1px solid var(--line-soft);
 }
 
-.pillar-cell-head span {
+.pillar-table-row:last-child {
+  border-bottom: 0;
+}
+
+.pillar-table-row > * {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 8px;
+  border-right: 1px solid var(--line-soft);
+}
+
+.pillar-table-row > *:last-child {
+  border-right: 0;
+}
+
+.pillar-row-label {
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
+  text-align: center;
 }
 
-.pillar-cell-head small,
-.pillar-line small,
-.hidden-stem-list > small {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.35;
+.pillar-table-head {
+  background: rgba(255, 255, 255, 0.48);
 }
 
-.pillar-cell-head small {
+.pillar-table-head strong,
+.pillar-ten-god {
   overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.pillar-ganzhi {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+.pillar-main-row > * {
+  min-height: 70px;
 }
 
-.pillar-ganzhi b {
+.pillar-main-char {
   display: flex;
-  min-width: 0;
-  min-height: 74px;
+  align-items: center;
+  justify-content: center;
+  color: var(--element-color);
+  font-weight: 500;
+  line-height: 1;
+  text-align: center;
+}
+
+.pillar-char-tile {
+  display: inline-flex;
+  width: min(76px, 100%);
+  min-height: 58px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   border: 1px solid var(--element-soft);
-  border-radius: var(--radius-md);
-  background: var(--element-tint);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--element-tint) 72%, white);
+}
+
+.pillar-char-tile b {
   color: var(--element-color);
   font-family: var(--font-display);
-  font-size: 38px;
+  font-size: 36px;
   font-weight: 500;
   line-height: 1;
 }
 
-.pillar-ganzhi small {
+.pillar-char-tile em {
   color: var(--element-color);
   font-family: var(--font-sans);
   font-size: 11px;
+  font-style: normal;
   font-weight: 700;
-  opacity: 0.72;
+  line-height: 1;
+  opacity: 0.68;
 }
 
-.pillar-line span {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.35;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.pillar-hidden-row {
+  align-items: stretch;
 }
 
-.hidden-stem-list {
+.hidden-stem-chips {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  align-content: flex-start;
+  justify-content: center;
+  gap: 4px;
 }
 
-.hidden-stem-list b {
+.hidden-stem-chips b {
   display: inline-flex;
-  min-height: 26px;
+  min-height: 22px;
   align-items: center;
   gap: 4px;
-  padding: 3px 7px;
+  padding: 2px 6px;
   border: 1px solid var(--element-soft);
   border-radius: var(--radius-sm);
-  background: var(--element-tint);
+  background: rgba(255, 255, 255, 0.56);
   color: var(--element-color);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
-.hidden-stem-list em {
+.hidden-stem-chips em {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 500;
 }
 
-.pillar-shensha {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
+.pillar-info-table {
+  display: block;
+  min-width: 0;
+  overflow: visible;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.pillar-info-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 52px repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.pillar-info-row:last-child {
+  border-bottom: 0;
+}
+
+.pillar-info-row > * {
+  min-width: 0;
+  padding: 8px;
+  border-right: 1px solid var(--line-soft);
+}
+
+.pillar-info-row > *:last-child {
+  border-right: 0;
+}
+
+.pillar-info-cell {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.pillar-shensha-row .pillar-info-cell {
+  display: flex;
+  min-height: 58px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  color: #9f8550;
+}
+
+.pillar-shensha-row b,
+.pillar-shensha-row em {
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 600;
   line-height: 1.35;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+}
+
+.pillar-shensha-row em {
+  color: var(--muted);
 }
 
 .stats-grid {
@@ -3032,8 +3094,71 @@ button:focus-visible,
     white-space: normal;
   }
 
-  .pillar-cell {
-    min-height: auto;
+  .pillar-table-row {
+    grid-template-columns: 40px repeat(4, minmax(0, 1fr));
+  }
+
+  .pillar-table-row > * {
+    min-height: 30px;
+    padding: 6px 4px;
+  }
+
+  .pillar-row-label,
+  .pillar-table-head strong,
+  .pillar-ten-god {
+    font-size: 12px;
+  }
+
+  .pillar-main-row > * {
+    min-height: 62px;
+  }
+
+  .pillar-char-tile {
+    width: min(58px, 100%);
+    min-height: 50px;
+    gap: 2px;
+  }
+
+  .pillar-char-tile b {
+    font-size: 30px;
+  }
+
+  .pillar-char-tile em {
+    font-size: 10px;
+  }
+
+  .hidden-stem-chips {
+    justify-content: flex-start;
+    gap: 3px;
+  }
+
+  .hidden-stem-chips b {
+    min-height: 20px;
+    padding: 1px 4px;
+    font-size: 11px;
+  }
+
+  .hidden-stem-chips em {
+    display: none;
+  }
+
+  .pillar-info-row {
+    grid-template-columns: 40px repeat(4, minmax(0, 1fr));
+  }
+
+  .pillar-info-row > * {
+    padding: 6px 4px;
+  }
+
+  .pillar-info-cell,
+  .pillar-shensha-row b,
+  .pillar-shensha-row em {
+    font-size: 11px;
+  }
+
+  .pillar-shensha-row .pillar-info-cell {
+    min-height: 52px;
+    gap: 2px;
   }
 
   .stats-grid {

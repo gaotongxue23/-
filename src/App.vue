@@ -417,7 +417,8 @@ function elementVisualStyle(element: FiveElement) {
   return {
     '--element-color': visual.color,
     '--element-soft': visual.soft,
-    '--element-tint': visual.tint
+    '--element-tint': visual.tint,
+    '--element-label': `'${element}'`
   };
 }
 
@@ -2215,38 +2216,62 @@ onMounted(async () => {
             </div>
           </div>
           <div v-if="chart" class="chart-content">
-            <div class="pillar-grid">
-              <article v-for="pillar in pillarRows" :key="pillar.name" class="pillar-cell">
-                <div class="pillar-cell-head">
-                  <span>{{ pillar.label }}</span>
-                  <small>{{ pillar.tenGodOfGan }}</small>
-                </div>
-                <div class="pillar-ganzhi" :aria-label="pillar.ganZhi">
-                  <b :style="elementVisualStyle(pillar.ganElement)">
-                    <small>天干</small>
-                    {{ pillar.gan }}
-                  </b>
-                  <b :style="elementVisualStyle(pillar.zhiElement)">
-                    <small>地支</small>
-                    {{ pillar.zhi }}
-                  </b>
-                </div>
-                <div class="pillar-line">
-                  <small>纳音</small>
-                  <span>{{ pillar.naYin }}</span>
-                </div>
-                <div class="hidden-stem-list">
-                  <small>藏干</small>
+            <div class="pillar-grid" role="table" aria-label="四柱排盘">
+              <div class="pillar-table-row pillar-table-head" role="row">
+                <span class="pillar-row-label">日期</span>
+                <strong v-for="pillar in pillarRows" :key="`${pillar.name}-head`">{{ pillar.label }}</strong>
+              </div>
+              <div class="pillar-table-row" role="row">
+                <span class="pillar-row-label">主星</span>
+                <span v-for="pillar in pillarRows" :key="`${pillar.name}-god`" class="pillar-ten-god">{{ pillar.tenGodOfGan }}</span>
+              </div>
+              <div class="pillar-table-row pillar-main-row" role="row">
+                <span class="pillar-row-label">天干</span>
+                <strong v-for="pillar in pillarRows" :key="`${pillar.name}-gan`" class="pillar-main-char" :style="elementVisualStyle(pillar.ganElement)">
+                  <span class="pillar-char-tile">
+                    <b>{{ pillar.gan }}</b>
+                    <em>{{ pillar.ganElement }}</em>
+                  </span>
+                </strong>
+              </div>
+              <div class="pillar-table-row pillar-main-row" role="row">
+                <span class="pillar-row-label">地支</span>
+                <strong v-for="pillar in pillarRows" :key="`${pillar.name}-zhi`" class="pillar-main-char" :style="elementVisualStyle(pillar.zhiElement)">
+                  <span class="pillar-char-tile">
+                    <b>{{ pillar.zhi }}</b>
+                    <em>{{ pillar.zhiElement }}</em>
+                  </span>
+                </strong>
+              </div>
+              <div class="pillar-table-row pillar-hidden-row" role="row">
+                <span class="pillar-row-label">藏干</span>
+                <span v-for="pillar in pillarRows" :key="`${pillar.name}-hidden`" class="hidden-stem-chips">
                   <b v-for="item in hiddenStemItems(pillar)" :key="`${pillar.name}-${item.stem}`" :style="elementVisualStyle(item.element)">
                     {{ item.stem }}<em v-if="item.tenGod">{{ item.tenGod }}</em>
                   </b>
-                </div>
-                <div v-if="pillar.xunKong" class="pillar-line">
-                  <small>空亡</small>
-                  <span>{{ pillar.xunKong }}</span>
-                </div>
-                <small v-if="pillar.shenSha?.length" class="pillar-shensha">神煞 {{ pillar.shenSha.join('、') }}</small>
-              </article>
+                </span>
+              </div>
+            </div>
+            <div class="pillar-info-table" role="table" aria-label="四柱辅助信息">
+              <div class="pillar-info-row" role="row">
+                <span class="pillar-row-label">纳音</span>
+                <span v-for="pillar in pillarRows" :key="`${pillar.name}-nayin`" class="pillar-info-cell">
+                  {{ pillar.naYin }}
+                </span>
+              </div>
+              <div class="pillar-info-row" role="row">
+                <span class="pillar-row-label">空亡</span>
+                <span v-for="pillar in pillarRows" :key="`${pillar.name}-xunkong`" class="pillar-info-cell">
+                  {{ pillar.xunKong || '—' }}
+                </span>
+              </div>
+              <div class="pillar-info-row pillar-shensha-row" role="row">
+                <span class="pillar-row-label">神煞</span>
+                <span v-for="pillar in pillarRows" :key="`${pillar.name}-shensha`" class="pillar-info-cell">
+                  <b v-for="item in pillar.shenSha ?? []" :key="`${pillar.name}-${item}`">{{ item }}</b>
+                  <em v-if="!pillar.shenSha?.length">—</em>
+                </span>
+              </div>
             </div>
             <div class="stats-grid">
               <span v-for="item in strengthRows" :key="`stat-${item.element}`" :style="elementVisualStyle(item.element)">
