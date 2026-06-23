@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 
 const PROXY_TIMEOUT_MS = 60_000;
 const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini';
+type ProxyProtocol = 'chat' | 'responses';
 
 interface ProxyPayload {
   base_url?: string;
@@ -9,6 +10,11 @@ interface ProxyPayload {
   model?: string;
   messages?: unknown[];
   temperature?: number;
+}
+
+interface ModelListPayload {
+  base_url?: string;
+  key?: string;
 }
 
 export const proxyRoutes = new Hono();
@@ -23,6 +29,40 @@ function fallbackChatUrl(baseUrl: string) {
   const url = new URL(primary);
   if (url.pathname.endsWith('/v1/chat/completions')) {
     url.pathname = `${url.pathname.slice(0, -'/v1/chat/completions'.length)}/chat/completions`;
+    return url.toString();
+  }
+  return null;
+}
+
+function normalizeResponsesUrl(baseUrl: string) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '');
+  if (trimmed.endsWith('/responses')) return trimmed;
+  if (trimmed.endsWith('/chat/completions')) return `${trimmed.slice(0, -'/chat/completions'.length)}/responses`;
+  return `${trimmed}/responses`;
+}
+
+function fallbackResponsesUrl(baseUrl: string) {
+  const primary = normalizeResponsesUrl(baseUrl);
+  const url = new URL(primary);
+  if (url.pathname.endsWith('/v1/responses')) {
+    url.pathname = `${url.pathname.slice(0, -'/v1/responses'.length)}/responses`;
+    return url.toString();
+  }
+  return null;
+}
+
+function normalizeModelsUrl(baseUrl: string) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '');
+  if (trimmed.endsWith('/models')) return trimmed;
+  if (trimmed.endsWith('/chat/completions')) return `${trimmed.slice(0, -'/chat/completions'.length)}/models`;
+  return `${trimmed}/models`;
+}
+
+function fallbackModelsUrl(baseUrl: string) {
+  const primary = normalizeModelsUrl(baseUrl);
+  const url = new URL(primary);
+  if (url.pathname.endsWith('/v1/models')) {
+    url.pathname = `${url.pathname.slice(0, -'/v1/models'.length)}/models`;
     return url.toString();
   }
   return null;
@@ -46,6 +86,17 @@ function validatePayload(payload: ProxyPayload) {
   return null;
 }
 
+function validateModelListPayload(payload: ModelListPayload) {
+  if (!payload.base_url?.trim()) return '缺少 base_url，请先配置模型端点。';
+  if (!payload.key?.trim()) return '缺少 key，请先配置模型凭据。';
+  try {
+    new URL(payload.base_url.trim());
+  } catch {
+    return 'base_url 格式不正确。';
+  }
+  return null;
+}
+
 function normalizeProviderModel(baseUrl: string, model: string) {
   const trimmedModel = model.trim();
   try {
@@ -57,6 +108,67 @@ function normalizeProviderModel(baseUrl: string, model: string) {
     // URL validation happens before upstream calls.
   }
   return trimmedModel;
+}
+
+function prefersResponsesProtocol(baseUrl: string, model: string) {
+  const normalizedModel = model.trim().toLowerCase();
+  if (normalizedModel.startsWith('gpt-5') || normalizedModel.includes('codex')) return true;
+  return false;
+}
+
+function knownProviderModels(baseUrl: string) {
+  try {
+    const hostname = new URL(baseUrl.trim()).hostname.toLowerCase();
+    if (hostname === 'api.deepseek.com' || hostname.endsWith('.deepseek.com')) {
+      return ['deepseek-chat', 'deepseek-reasoner'];
+    }
+    if (hostname === 'api.openai.com' || hostname.endsWith('.openai.com')) {
+      return ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'];
+    }
+  } catch {
+    return [];
+  }
+  return [];
+}
+
+function preferredModelScore(id: string) {
+  const lower = id.toLowerCase();
+  if (lower === 'gpt-5-codex') return 0;
+  if (lower === 'deepseek-chat') return 0;
+  if (lower === 'gpt-4o-mini') return 1;
+  if (lower.includes('chat')) return 2;
+  if (lower.includes('gpt') || lower.includes('deepseek') || lower.includes('qwen') || lower.includes('glm')) return 3;
+  return 8;
+}
+
+function normalizeModelIds(json: any): string[] {
+  const rawModels = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : Array.isArray(json) ? json : [];
+  const ids: string[] = rawModels
+    .map((item: any) => (typeof item === 'string' ? item : item?.id ?? item?.name))
+    .filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
+    .map((id: string) => id.trim());
+  return Array.from(new Set<string>(ids)).sort((a, b) => preferredModelScore(a) - preferredModelScore(b) || a.localeCompare(b));
+}
+
+async function callModelsEndpoint(payload: ModelListPayload) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
+  try {
+    const init = {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${payload.key}`,
+        Accept: 'application/json'
+      },
+      signal: controller.signal
+    };
+    const upstream = await fetch(normalizeModelsUrl(payload.base_url!), init);
+    const fallback = upstream.status === 404 ? fallbackModelsUrl(payload.base_url!) : null;
+    if (fallback) return fetch(fallback, init);
+    return upstream;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function createSseFromText(content: string) {
@@ -71,10 +183,27 @@ function createSseFromText(content: string) {
 }
 
 function extractChatContent(json: any): string | null {
-  const content = json?.choices?.[0]?.message?.content ?? json?.choices?.[0]?.delta?.content ?? json?.content;
+  const content =
+    json?.choices?.[0]?.message?.content ??
+    json?.choices?.[0]?.delta?.content ??
+    (json?.type === 'response.output_text.delta' ? json?.delta : undefined) ??
+    json?.output_text ??
+    json?.content;
   if (typeof content === 'string' && content.length > 0) return content;
   if (typeof json === 'string' && json.length > 0) return json;
   return null;
+}
+
+function extractResponsesContent(json: any): string | null {
+  if (typeof json?.output_text === 'string' && json.output_text.length > 0) return json.output_text;
+  if (json?.type === 'response.output_text.delta' && typeof json?.delta === 'string') return json.delta;
+  const output = Array.isArray(json?.output) ? json.output : [];
+  const text = output
+    .flatMap((item: any) => (Array.isArray(item?.content) ? item.content : []))
+    .map((content: any) => content?.text ?? content?.content ?? '')
+    .filter((content: unknown): content is string => typeof content === 'string' && content.length > 0)
+    .join('');
+  return text || null;
 }
 
 function extractContentFromSseText(text: string) {
@@ -88,13 +217,24 @@ function extractContentFromSseText(text: string) {
       if (!data || data === '[DONE]') continue;
       try {
         const parsed = JSON.parse(data);
-        content += extractChatContent(parsed) ?? '';
+        content += extractChatContent(parsed) ?? extractResponsesContent(parsed) ?? '';
       } catch {
         content += data;
       }
     }
   }
   return content || null;
+}
+
+async function readResponsesContent(upstream: Response) {
+  const raw = await upstream.text();
+  if (/^\s*(?:<!doctype\s+html|<html)\b/i.test(raw)) return null;
+  if (raw.trimStart().startsWith('data:')) return extractContentFromSseText(raw);
+  try {
+    return extractResponsesContent(JSON.parse(raw));
+  } catch {
+    return raw.trim() || null;
+  }
 }
 
 async function readChatContent(upstream: Response) {
@@ -126,6 +266,35 @@ function chatRequestInit(payload: ProxyPayload, stream: boolean, signal: AbortSi
   };
 }
 
+function responsesRequestInit(payload: ProxyPayload, stream: boolean, signal: AbortSignal) {
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  const instructions = messages
+    .filter((message: any) => message?.role === 'system' && typeof message?.content === 'string')
+    .map((message: any) => message.content)
+    .join('\n\n');
+  const input =
+    messages
+      .filter((message: any) => message?.role !== 'system' && typeof message?.content === 'string')
+      .map((message: any) => `${message.role === 'assistant' ? 'assistant' : 'user'}: ${message.content}`)
+      .join('\n\n') || '请继续。';
+  return {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${payload.key}`,
+      Accept: stream ? 'text/event-stream, application/json' : 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: normalizeProviderModel(payload.base_url!, payload.model!),
+      ...(instructions ? { instructions } : {}),
+      input,
+      temperature: Number.isFinite(payload.temperature) ? payload.temperature : 0.7,
+      stream
+    }),
+    signal
+  };
+}
+
 async function callUpstream(payload: ProxyPayload, stream: boolean) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
@@ -133,6 +302,19 @@ async function callUpstream(payload: ProxyPayload, stream: boolean) {
     const upstream = await fetch(normalizeChatUrl(payload.base_url!), chatRequestInit(payload, stream, controller.signal));
     const fallback = upstream.status === 404 ? fallbackChatUrl(payload.base_url!) : null;
     if (fallback) return fetch(fallback, chatRequestInit(payload, stream, controller.signal));
+    return upstream;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callResponsesUpstream(payload: ProxyPayload, stream: boolean) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
+  try {
+    const upstream = await fetch(normalizeResponsesUrl(payload.base_url!), responsesRequestInit(payload, stream, controller.signal));
+    const fallback = upstream.status === 404 ? fallbackResponsesUrl(payload.base_url!) : null;
+    if (fallback) return fetch(fallback, responsesRequestInit(payload, stream, controller.signal));
     return upstream;
   } finally {
     clearTimeout(timeout);
@@ -173,6 +355,25 @@ function unreadableUpstreamBody() {
   };
 }
 
+async function callCompatibleUpstream(payload: ProxyPayload, stream: boolean) {
+  if (prefersResponsesProtocol(payload.base_url!, payload.model!)) {
+    const responses = await callResponsesUpstream(payload, stream);
+    if (responses.ok) return { protocol: 'responses' as ProxyProtocol, upstream: responses };
+    const chat = await callUpstream(payload, stream);
+    if (chat.ok) return { protocol: 'chat' as ProxyProtocol, upstream: chat };
+    return { protocol: 'responses' as ProxyProtocol, upstream: responses };
+  }
+  const chat = await callUpstream(payload, stream);
+  if (chat.ok) return { protocol: 'chat' as ProxyProtocol, upstream: chat };
+  const responses = await callResponsesUpstream(payload, stream);
+  if (responses.ok) return { protocol: 'responses' as ProxyProtocol, upstream: responses };
+  return { protocol: 'responses' as ProxyProtocol, upstream: responses };
+}
+
+async function readProtocolContent(protocol: ProxyProtocol, upstream: Response) {
+  return protocol === 'responses' ? readResponsesContent(upstream) : readChatContent(upstream);
+}
+
 proxyRoutes.post('/proxy', async (c) => {
   let payload: ProxyPayload;
   try {
@@ -185,13 +386,13 @@ proxyRoutes.post('/proxy', async (c) => {
   if (validationError) return c.json({ error: validationError }, 400);
 
   try {
-    const upstream = await callUpstream(payload, true);
+    const { protocol, upstream } = await callCompatibleUpstream(payload, true);
     if (!upstream.ok) {
       return c.json(await upstreamErrorBody(upstream, payload.key), clientErrorStatus(upstream.status) as any);
     }
 
     const contentType = upstream.headers.get('content-type') ?? '';
-    if (contentType.includes('text/event-stream') && upstream.body) {
+    if (protocol === 'chat' && contentType.includes('text/event-stream') && upstream.body) {
       return new Response(upstream.body, {
         headers: {
           'Content-Type': 'text/event-stream; charset=utf-8',
@@ -201,13 +402,13 @@ proxyRoutes.post('/proxy', async (c) => {
       });
     }
 
-    let content = await readChatContent(upstream);
+    let content = await readProtocolContent(protocol, upstream);
     if (!content) {
-      const retry = await callUpstream(payload, false);
+      const { protocol: retryProtocol, upstream: retry } = await callCompatibleUpstream(payload, false);
       if (!retry.ok) {
         return c.json(await upstreamErrorBody(retry, payload.key), clientErrorStatus(retry.status) as any);
       }
-      content = await readChatContent(retry);
+      content = await readProtocolContent(retryProtocol, retry);
     }
     if (!content) {
       return c.json(unreadableUpstreamBody(), 424);
@@ -221,6 +422,47 @@ proxyRoutes.post('/proxy', async (c) => {
   } catch (error: any) {
     const message = error?.name === 'AbortError' ? '上游请求超时' : '无法连接上游，请检查 base_url。';
     return c.json({ error: message }, error?.name === 'AbortError' ? 408 : 424);
+  }
+});
+
+proxyRoutes.post('/proxy/models', async (c) => {
+  let payload: ModelListPayload;
+  try {
+    payload = await c.req.json();
+  } catch {
+    return c.json({ error: '请求体必须是 JSON。' }, 400);
+  }
+
+  const validationError = validateModelListPayload(payload);
+  if (validationError) return c.json({ error: validationError }, 400);
+
+  try {
+    const upstream = await callModelsEndpoint(payload);
+    if (!upstream.ok) {
+      const knownModels = knownProviderModels(payload.base_url!);
+      if (knownModels.length) {
+        return c.json({ models: knownModels, source: 'known' });
+      }
+      return c.json(await upstreamErrorBody(upstream, payload.key), clientErrorStatus(upstream.status) as any);
+    }
+
+    const json = await upstream.json().catch(() => null);
+    const models = normalizeModelIds(json);
+    if (models.length) {
+      return c.json({ models, source: 'upstream' });
+    }
+
+    const knownModels = knownProviderModels(payload.base_url!);
+    if (knownModels.length) {
+      return c.json({ models: knownModels, source: 'known' });
+    }
+    return c.json({ error: '没有从服务商解析到可用模型。' }, 424);
+  } catch (error: any) {
+    const knownModels = knownProviderModels(payload.base_url!);
+    if (knownModels.length) {
+      return c.json({ models: knownModels, source: 'known' });
+    }
+    return c.json({ error: error?.name === 'AbortError' ? '上游请求超时' : '无法连接上游，请检查 base_url。' }, error?.name === 'AbortError' ? 408 : 424);
   }
 });
 
@@ -240,11 +482,11 @@ proxyRoutes.post('/proxy/test', async (c) => {
   if (validationError) return c.json({ error: validationError }, 400);
 
   try {
-    const upstream = await callUpstream(testPayload, false);
+    const { protocol, upstream } = await callCompatibleUpstream(testPayload, false);
     if (!upstream.ok) {
       return c.json(await upstreamErrorBody(upstream, testPayload.key), clientErrorStatus(upstream.status) as any);
     }
-    if (!(await readChatContent(upstream))) {
+    if (!(await readProtocolContent(protocol, upstream))) {
       return c.json(unreadableUpstreamBody(), 424);
     }
     return c.json({ ok: true });

@@ -9,7 +9,14 @@ export interface StreamRequest {
   signal?: AbortSignal;
 }
 
+export interface ModelListResult {
+  models: string[];
+  source: 'upstream' | 'known';
+}
+
 function readOpenAiDelta(payload: any): string {
+  if (payload?.type === 'response.output_text.delta' && typeof payload?.delta === 'string') return payload.delta;
+  if (typeof payload?.output_text === 'string') return payload.output_text;
   return payload?.choices?.[0]?.delta?.content ?? payload?.choices?.[0]?.message?.content ?? payload?.content ?? '';
 }
 
@@ -86,4 +93,24 @@ export async function testCredentials(credentials: LocalCredentials): Promise<vo
     const error = await response.json().catch(() => ({ error: '连通性测试失败' }));
     throw new Error(formatProxyError(error, '连通性测试失败'));
   }
+}
+
+export async function fetchAvailableModels(credentials: Pick<LocalCredentials, 'baseUrl' | 'apiKey'>): Promise<ModelListResult> {
+  const response = await fetch('/api/proxy/models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      base_url: credentials.baseUrl.trim(),
+      key: credentials.apiKey.trim()
+    })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: '模型列表获取失败' }));
+    throw new Error(formatProxyError(error, '模型列表获取失败'));
+  }
+  const payload = (await response.json()) as Partial<ModelListResult>;
+  return {
+    models: Array.isArray(payload.models) ? payload.models.filter((model): model is string => typeof model === 'string' && model.trim().length > 0) : [],
+    source: payload.source === 'known' ? 'known' : 'upstream'
+  };
 }

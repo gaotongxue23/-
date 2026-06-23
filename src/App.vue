@@ -31,7 +31,7 @@ import { localeStorageKey, normalizeLocale, translate, type Locale, type Transla
 import type { BaziChart, BirthDateTimeInput, ChartFactor, FiveElement, LuckCycle, Pillar, PillarName } from '@/bazi/types';
 import { buildFortuneMessages, buildPersonaGenerationMessages, type FortuneTask, type PersonaGenerationDraft } from '@/persona/prompt';
 import { fetchPersonas } from '@/services/personas';
-import { streamFortuneReading, testCredentials } from '@/services/proxy';
+import { fetchAvailableModels, streamFortuneReading, testCredentials } from '@/services/proxy';
 import {
   createAdminPersona,
   deleteAdminPersona,
@@ -170,10 +170,13 @@ const directPillarsText = ref('');
 const credentialsDraft = reactive<LocalCredentials>({
   baseUrl: '',
   apiKey: '',
-  model: 'gpt-4o-mini'
+  model: ''
 });
 const credentialsStatus = ref('');
 const testingCredentials = ref(false);
+const loadingModels = ref(false);
+const modelOptions = ref<string[]>([]);
+const modelSource = ref<'upstream' | 'known' | ''>('');
 
 const adminSession = reactive<AdminSession>({
   username: '',
@@ -374,17 +377,6 @@ const mobileDailyMeta = computed(() => {
   if (!daily) return t('daily.pending');
   return t('daily.today', { ganZhi: daily.ganZhi, relation: daily.relationToDayMaster });
 });
-const mobileRecentSummary = computed(() => {
-  const message = [...historyMessages.value].reverse().find((item) => item.role === 'assistant');
-  if (!message) return '';
-  return message.content
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/[#>*_`-]/g, '')
-    .replace(/\[|\]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 96);
-});
 const mobileChartHighlights = computed(() => {
   if (!chart.value) return [];
   return [
@@ -395,6 +387,11 @@ const mobileChartHighlights = computed(() => {
   ];
 });
 const hasCredentials = computed(() => Boolean(credentialsDraft.baseUrl && credentialsDraft.apiKey && credentialsDraft.model));
+const modelSelectOptions = computed(() => {
+  const options = [...modelOptions.value];
+  if (credentialsDraft.model && !options.includes(credentialsDraft.model)) options.unshift(credentialsDraft.model);
+  return options;
+});
 const adminEditing = computed(() => Boolean(adminForm.id));
 const adminEngineDraftActive = computed(
   () => Boolean(adminEngineForm.id) && adminForm.engineId === adminEngineForm.id && !isBuiltinEngineId(adminForm.engineId)
@@ -403,6 +400,18 @@ const adminEngineDraftActive = computed(
 function showMobileTab(tab: MobileTab) {
   activePanel.value = 'reading';
   mobileTab.value = tab;
+}
+
+async function requestMobileReading(task: FortuneTask, question?: string) {
+  showMobileTab('reading');
+  await nextTick();
+  await requestReading(task, question);
+}
+
+async function requestMobileDailyLot() {
+  showMobileTab('reading');
+  await nextTick();
+  await requestDailyLot();
 }
 
 function formatChartFactor(factor?: ChartFactor) {
@@ -1131,8 +1140,54 @@ function openSettings() {
   activePanel.value = 'settings';
 }
 
+function resetModelSelection() {
+  credentialsDraft.model = '';
+  modelOptions.value = [];
+  modelSource.value = '';
+}
+
+function validateModelLookupCredentials() {
+  if (!credentialsDraft.baseUrl.trim()) return '请先填写 base_url';
+  if (!/^https?:\/\//i.test(credentialsDraft.baseUrl.trim())) return 'base_url 必须以 http:// 或 https:// 开头';
+  if (!credentialsDraft.apiKey.trim()) return '请先填写 key';
+  return null;
+}
+
+async function refreshModelOptions(silent = false) {
+  Object.assign(credentialsDraft, normalizeCredentials(credentialsDraft));
+  const error = validateModelLookupCredentials();
+  if (error) {
+    if (!silent) credentialsStatus.value = error;
+    return false;
+  }
+  loadingModels.value = true;
+  if (!silent) credentialsStatus.value = '正在解析可用模型...';
+  try {
+    const result = await fetchAvailableModels(credentialsDraft);
+    modelOptions.value = result.models;
+    modelSource.value = result.source;
+    if (!modelOptions.value.length) {
+      credentialsStatus.value = '没有解析到可用模型，请检查 base_url 和 key';
+      return false;
+    }
+    if (!credentialsDraft.model || !modelOptions.value.includes(credentialsDraft.model)) {
+      credentialsDraft.model = modelOptions.value[0];
+    }
+    if (!silent) {
+      credentialsStatus.value = result.source === 'upstream' ? '已解析可用模型，请选择后保存' : '已根据官方服务商推荐模型，请选择后保存';
+    }
+    return true;
+  } catch (error: any) {
+    credentialsStatus.value = error?.message ?? '模型列表获取失败';
+    return false;
+  } finally {
+    loadingModels.value = false;
+  }
+}
+
 async function persistCredentials() {
   Object.assign(credentialsDraft, normalizeCredentials(credentialsDraft));
+  if (!credentialsDraft.model && !(await refreshModelOptions(true))) return;
   const error = validateCredentials(credentialsDraft);
   if (error) {
     credentialsStatus.value = error;
@@ -1144,6 +1199,7 @@ async function persistCredentials() {
 
 async function runCredentialTest() {
   Object.assign(credentialsDraft, normalizeCredentials(credentialsDraft));
+  if (!credentialsDraft.model && !(await refreshModelOptions(true))) return;
   const error = validateCredentials(credentialsDraft);
   if (error) {
     credentialsStatus.value = error;
@@ -1165,7 +1221,9 @@ function removeCredentials() {
   clearCredentials();
   credentialsDraft.baseUrl = '';
   credentialsDraft.apiKey = '';
-  credentialsDraft.model = 'gpt-4o-mini';
+  credentialsDraft.model = '';
+  modelOptions.value = [];
+  modelSource.value = '';
   credentialsStatus.value = '凭据已从本机浏览器移除';
 }
 
@@ -2119,36 +2177,36 @@ onMounted(async () => {
           </button>
         </div>
         <div class="mobile-quick-grid">
-          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('structured_report')">
+          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('structured_report')">
             <FileText :size="17" aria-hidden="true" />
             {{ t('home.professionalReport') }}
           </button>
-          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('multi_school')">
+          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('multi_school')">
             <Users :size="17" aria-hidden="true" />
             {{ t('home.multiSchool') }}
           </button>
-          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('bazi_full')">
+          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('bazi_full')">
             <Wand2 :size="17" aria-hidden="true" />
             {{ t('home.fullReading') }}
           </button>
-          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('daily')">
+          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('daily')">
             <CalendarDays :size="17" aria-hidden="true" />
             {{ t('home.dailyFortune') }}
           </button>
-          <button class="secondary-button" type="button" :disabled="!chart || streaming || drawingLot" @click="requestDailyLot">
+          <button class="secondary-button" type="button" :disabled="!chart || streaming || drawingLot" @click="requestMobileDailyLot">
             <Sparkles :size="17" aria-hidden="true" />
             {{ t('home.dailyLot') }}
           </button>
         </div>
         <div class="mobile-follow-card">
-          <input v-model="followQuestion" type="text" :placeholder="t('home.askPlaceholder')" @keyup.enter="requestReading('follow_up', followQuestion)" />
+          <input v-model="followQuestion" type="text" :placeholder="t('home.askPlaceholder')" @keyup.enter="requestMobileReading('follow_up', followQuestion)" />
           <button
             class="composer-send"
             type="button"
             :title="t('home.sendFollowUp')"
             :aria-label="t('home.sendFollowUp')"
             :disabled="streaming || !followQuestion.trim()"
-            @click="requestReading('follow_up', followQuestion)"
+            @click="requestMobileReading('follow_up', followQuestion)"
           >
             <Send :size="18" aria-hidden="true" />
           </button>
@@ -2156,19 +2214,6 @@ onMounted(async () => {
         <p class="note-line">{{ t('home.readingHint') }}</p>
       </section>
 
-      <section class="mobile-card mobile-summary-card">
-        <div class="mobile-card-head">
-          <div>
-            <span class="mobile-eyebrow">{{ t('home.recent') }}</span>
-            <h2>{{ t('home.recentSummary') }}</h2>
-          </div>
-          <button class="ghost-button mobile-link-button" type="button" @click="showMobileTab('reading')">
-            {{ t('home.viewAll') }}
-          </button>
-        </div>
-        <p v-if="mobileRecentSummary">{{ mobileRecentSummary }}</p>
-        <p v-else class="empty-state">{{ t('home.noReply') }}</p>
-      </section>
     </section>
 
     <section v-if="activePanel === 'reading' && mobileTab === 'mine'" class="mobile-screen mobile-mine-view" aria-label="移动端我的">
@@ -2418,38 +2463,87 @@ onMounted(async () => {
         </section>
 
         <section class="panel conversation-panel">
-          <div class="panel-title">
-            <MessageCircle :size="18" aria-hidden="true" />
-            <h2>{{ t('nav.reading') }}</h2>
+          <div class="reading-chat-header">
+            <div class="reading-guide-card">
+              <img v-if="selectedPersona" :src="selectedPersona.avatarUrl" :alt="selectedPersona.name" />
+              <div v-else class="reading-guide-fallback" aria-hidden="true">
+                <MessageCircle :size="20" />
+              </div>
+              <div>
+                <span>{{ t('nav.reading') }}</span>
+                <strong>{{ selectedPersona?.name ?? t('home.masterFallback') }}</strong>
+                <small>{{ selectedPersona ? engineNameById(selectedPersona.engineId) : '' }} · {{ birthTriggerLabel }}</small>
+              </div>
+            </div>
             <button class="ghost-button export-button" type="button" :disabled="streaming || !latestAssistantReading()" @click="exportCurrentReading">
               <Download :size="16" aria-hidden="true" />
               {{ t('home.exportMarkdown') }}
             </button>
           </div>
-          <div ref="answerBoxRef" class="answer-box">
+          <div class="mobile-reading-prompts reading-prompt-strip" aria-label="快捷解读问题">
+            <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('structured_report')">
+              <FileText :size="16" aria-hidden="true" />
+              {{ t('home.professionalReport') }}
+            </button>
+            <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('multi_school')">
+              <Users :size="16" aria-hidden="true" />
+              {{ t('home.multiSchool') }}
+            </button>
+            <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('bazi_full')">
+              <Wand2 :size="16" aria-hidden="true" />
+              {{ t('home.fullReading') }}
+            </button>
+            <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('daily')">
+              <CalendarDays :size="16" aria-hidden="true" />
+              {{ t('home.dailyFortune') }}
+            </button>
+            <button class="secondary-button" type="button" :disabled="!chart || streaming || drawingLot" @click="requestDailyLot">
+              <Sparkles :size="16" aria-hidden="true" />
+              {{ t('home.dailyLot') }}
+            </button>
+          </div>
+          <div ref="answerBoxRef" class="answer-box chat-timeline">
             <template v-if="historyMessages.length || readingText">
               <article v-for="message in historyMessages.slice(-10)" :key="message.id" :class="['chat-message', `chat-${message.role}`]">
-                <MarkdownRenderer :blocks="parseMarkdown(message.content)" />
+                <div class="chat-speaker">{{ message.role === 'user' ? '我' : selectedPersona?.name ?? t('home.masterFallback') }}</div>
+                <div class="chat-bubble">
+                  <MarkdownRenderer :blocks="parseMarkdown(message.content)" />
+                </div>
               </article>
               <article v-if="readingText" class="chat-message chat-assistant chat-streaming">
-                <MarkdownRenderer :blocks="activeReadingBlocks" />
-                <span v-if="streaming" class="caret markdown-caret"></span>
+                <div class="chat-speaker">{{ selectedPersona?.name ?? t('home.masterFallback') }}</div>
+                <div class="chat-bubble">
+                  <MarkdownRenderer :blocks="activeReadingBlocks" />
+                  <span v-if="streaming" class="caret markdown-caret"></span>
+                </div>
               </article>
             </template>
-            <p v-else class="empty-state">命盘生成后可请求解读；没有 key 也不影响排盘。</p>
+            <div v-else class="reading-empty-state">
+              <MessageCircle :size="22" aria-hidden="true" />
+              <strong>选择一个方向开始解读</strong>
+              <p>可以先生成专业报告，也可以直接追问你关心的事业、感情或流年。</p>
+            </div>
+            <div v-if="streaming && !readingText" class="typing-indicator">
+              <span></span>
+              <span></span>
+              <span></span>
+              {{ selectedPersona?.name ?? t('home.masterFallback') }}正在推演
+            </div>
           </div>
-          <div class="follow-row" role="group" aria-label="追问输入">
-            <input v-model="followQuestion" type="text" placeholder="向大师追问" @keyup.enter="requestReading('follow_up', followQuestion)" />
-            <button
-              class="composer-send"
-              type="button"
-              :title="t('home.sendFollowUp')"
-              :aria-label="t('home.sendFollowUp')"
-              :disabled="streaming || !followQuestion.trim()"
-              @click="requestReading('follow_up', followQuestion)"
-            >
-              <Send :size="18" aria-hidden="true" />
-            </button>
+          <div class="chat-composer-shell">
+            <div class="follow-row" role="group" aria-label="追问输入">
+              <input v-model="followQuestion" type="text" placeholder="向大师追问" @keyup.enter="requestReading('follow_up', followQuestion)" />
+              <button
+                class="composer-send"
+                type="button"
+                :title="t('home.sendFollowUp')"
+                :aria-label="t('home.sendFollowUp')"
+                :disabled="streaming || !followQuestion.trim()"
+                @click="requestReading('follow_up', followQuestion)"
+              >
+                <Send :size="18" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         </section>
       </section>
@@ -2463,16 +2557,28 @@ onMounted(async () => {
         </div>
         <label>
           base_url
-          <input v-model="credentialsDraft.baseUrl" type="url" placeholder="https://api.example.com/v1" />
+          <input v-model="credentialsDraft.baseUrl" type="url" placeholder="https://api.example.com/v1" @input="resetModelSelection" />
         </label>
         <label>
           key
-          <input v-model="credentialsDraft.apiKey" type="password" autocomplete="off" />
+          <input v-model="credentialsDraft.apiKey" type="password" autocomplete="off" @input="resetModelSelection" />
         </label>
-        <label>
-          模型
-          <input v-model="credentialsDraft.model" type="text" />
-        </label>
+        <div class="model-picker">
+          <div class="model-picker-head">
+            <span>模型</span>
+            <button class="ghost-button" type="button" :disabled="loadingModels || !credentialsDraft.baseUrl.trim() || !credentialsDraft.apiKey.trim()" @click="refreshModelOptions()">
+              <RefreshCw :size="16" aria-hidden="true" />
+              {{ loadingModels ? '解析中' : '解析模型' }}
+            </button>
+          </div>
+          <select v-model="credentialsDraft.model" :disabled="loadingModels || !modelSelectOptions.length">
+            <option value="" disabled>{{ modelSelectOptions.length ? '请选择模型' : '填写 base_url 和 key 后解析模型' }}</option>
+            <option v-for="model in modelSelectOptions" :key="model" :value="model">{{ model }}</option>
+          </select>
+          <small v-if="modelOptions.length" class="model-picker-note">
+            {{ modelSource === 'upstream' ? '已从服务商接口解析模型列表' : '已根据官方服务商提供推荐模型' }}
+          </small>
+        </div>
         <p class="privacy-line">不存不记凭据：key 仅保存在本机浏览器，请求时随包透传，服务端不持久化、不记录请求正文。</p>
         <div class="actions-row">
           <button class="primary-button" type="button" @click="persistCredentials">
