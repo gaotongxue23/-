@@ -40,6 +40,11 @@ export function normalizeChatUrl(baseUrl: string) {
   return trimmed.endsWith('/chat/completions') ? trimmed : `${trimmed}/chat/completions`;
 }
 
+export interface ModelListPayload {
+  base_url?: string;
+  key?: string;
+}
+
 export function fallbackChatUrl(baseUrl: string) {
   const primary = normalizeChatUrl(baseUrl);
   const url = new URL(primary);
@@ -48,6 +53,38 @@ export function fallbackChatUrl(baseUrl: string) {
     return url.toString();
   }
   return null;
+}
+
+export function normalizeModelsUrl(baseUrl: string) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '');
+  if (trimmed.endsWith('/models')) return trimmed;
+  if (trimmed.endsWith('/chat/completions')) return `${trimmed.slice(0, -'/chat/completions'.length)}/models`;
+  return `${trimmed}/models`;
+}
+
+export function fallbackModelsUrl(baseUrl: string) {
+  const primary = normalizeModelsUrl(baseUrl);
+  const url = new URL(primary);
+  if (url.pathname.endsWith('/v1/models')) {
+    url.pathname = `${url.pathname.slice(0, -'/v1/models'.length)}/models`;
+    return url.toString();
+  }
+  return null;
+}
+
+export function modelUrlCandidates(baseUrl: string) {
+  const primary = normalizeModelsUrl(baseUrl);
+  const candidates = [primary];
+  const fallback = fallbackModelsUrl(baseUrl);
+  if (fallback) candidates.push(fallback);
+
+  const url = new URL(primary);
+  if (url.pathname.endsWith('/models') && !url.pathname.endsWith('/v1/models')) {
+    const withV1 = new URL(primary);
+    withV1.pathname = `${withV1.pathname.slice(0, -'/models'.length).replace(/\/+$/, '')}/v1/models`;
+    candidates.push(withV1.toString());
+  }
+  return [...new Set(candidates)];
 }
 
 export function classifyStatus(status: number) {
@@ -68,6 +105,17 @@ export function validatePayload(payload: ProxyPayload) {
   return null;
 }
 
+export function validateModelListPayload(payload: ModelListPayload) {
+  if (!payload.base_url?.trim()) return '缺少 base_url，请先配置模型端点。';
+  if (!payload.key?.trim()) return '缺少 key，请先配置模型凭据。';
+  try {
+    new URL(payload.base_url.trim());
+  } catch {
+    return 'base_url 格式不正确。';
+  }
+  return null;
+}
+
 export function normalizeProviderModel(baseUrl: string, model: string) {
   const trimmedModel = model.trim();
   try {
@@ -79,6 +127,41 @@ export function normalizeProviderModel(baseUrl: string, model: string) {
     // URL validation happens before upstream calls.
   }
   return trimmedModel;
+}
+
+export function knownProviderModels(baseUrl: string) {
+  try {
+    const hostname = new URL(baseUrl.trim()).hostname.toLowerCase();
+    if (hostname === 'api.deepseek.com' || hostname.endsWith('.deepseek.com')) {
+      return ['deepseek-v4-pro', 'deepseek-v4-flash'];
+    }
+    if (hostname === 'api.openai.com' || hostname.endsWith('.openai.com')) {
+      return ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'];
+    }
+  } catch {
+    return [];
+  }
+  return [];
+}
+
+export function preferredModelScore(id: string) {
+  const lower = id.toLowerCase();
+  if (lower === 'gpt-5-codex') return 0;
+  if (lower === 'deepseek-v4-pro') return 0;
+  if (lower === 'deepseek-v4-flash') return 1;
+  if (lower === 'gpt-4o-mini') return 1;
+  if (lower.includes('chat')) return 4;
+  if (lower.includes('gpt') || lower.includes('deepseek') || lower.includes('qwen') || lower.includes('glm')) return 5;
+  return 8;
+}
+
+export function normalizeModelIds(json: any): string[] {
+  const rawModels = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : Array.isArray(json) ? json : [];
+  const ids: string[] = rawModels
+    .map((item: any) => (typeof item === 'string' ? item : item?.id ?? item?.name))
+    .filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
+    .map((id: string) => id.trim());
+  return Array.from(new Set<string>(ids)).sort((a, b) => preferredModelScore(a) - preferredModelScore(b) || a.localeCompare(b));
 }
 
 export function extractChatContent(json: any): string | null {
@@ -145,6 +228,30 @@ export async function callUpstream(payload: ProxyPayload, stream: boolean) {
     const fallback = upstream.status === 404 ? fallbackChatUrl(payload.base_url!) : null;
     if (fallback) return fetch(fallback, chatRequestInit(payload, stream, controller.signal));
     return upstream;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function callModelsEndpoint(payload: ModelListPayload) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
+  try {
+    const init = {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${payload.key}`,
+        Accept: 'application/json'
+      },
+      signal: controller.signal
+    };
+    let lastResponse: Response | null = null;
+    for (const url of modelUrlCandidates(payload.base_url!)) {
+      const upstream = await fetch(url, init);
+      if (upstream.ok || upstream.status !== 404) return upstream;
+      lastResponse = upstream;
+    }
+    return lastResponse ?? fetch(normalizeModelsUrl(payload.base_url!), init);
   } finally {
     clearTimeout(timeout);
   }
