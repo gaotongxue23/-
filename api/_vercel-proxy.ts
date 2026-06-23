@@ -1,5 +1,6 @@
 const PROXY_TIMEOUT_MS = 60_000;
 const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini';
+const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro';
 
 export interface ProxyPayload {
   base_url?: string;
@@ -72,7 +73,7 @@ export function normalizeProviderModel(baseUrl: string, model: string) {
   try {
     const hostname = new URL(baseUrl.trim()).hostname.toLowerCase();
     if ((hostname === 'api.deepseek.com' || hostname.endsWith('.deepseek.com')) && trimmedModel === OPENAI_DEFAULT_MODEL) {
-      return 'deepseek-chat';
+      return DEEPSEEK_DEFAULT_MODEL;
     }
   } catch {
     // URL validation happens before upstream calls.

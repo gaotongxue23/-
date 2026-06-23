@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 
 const PROXY_TIMEOUT_MS = 60_000;
 const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini';
+const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro';
 type ProxyProtocol = 'chat' | 'responses';
 
 interface ProxyPayload {
@@ -117,7 +118,7 @@ function normalizeProviderModel(baseUrl: string, model: string) {
   try {
     const hostname = new URL(baseUrl.trim()).hostname.toLowerCase();
     if ((hostname === 'api.deepseek.com' || hostname.endsWith('.deepseek.com')) && trimmedModel === OPENAI_DEFAULT_MODEL) {
-      return 'deepseek-chat';
+      return DEEPSEEK_DEFAULT_MODEL;
     }
   } catch {
     // URL validation happens before upstream calls.
@@ -135,7 +136,7 @@ function knownProviderModels(baseUrl: string) {
   try {
     const hostname = new URL(baseUrl.trim()).hostname.toLowerCase();
     if (hostname === 'api.deepseek.com' || hostname.endsWith('.deepseek.com')) {
-      return ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner'];
+      return ['deepseek-v4-pro', 'deepseek-v4-flash'];
     }
     if (hostname === 'api.openai.com' || hostname.endsWith('.openai.com')) {
       return ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'];
@@ -469,11 +470,11 @@ proxyRoutes.post('/proxy/models', async (c) => {
 
     const json = await upstream.json().catch(() => null);
     const models = normalizeModelIds(json);
+    const knownModels = knownProviderModels(payload.base_url!);
     if (models.length) {
       return c.json({ models, source: 'upstream' });
     }
 
-    const knownModels = knownProviderModels(payload.base_url!);
     if (knownModels.length) {
       return c.json({ models: knownModels, source: 'known' });
     }

@@ -2,6 +2,7 @@ import type { LocalCredentials } from './types';
 
 const KEY = 'soothsay-byok';
 const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini';
+const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro';
 
 export function normalizeCredentials(credentials: LocalCredentials): LocalCredentials {
   const baseUrl = credentials.baseUrl.trim();
@@ -11,7 +12,7 @@ export function normalizeCredentials(credentials: LocalCredentials): LocalCreden
   try {
     const hostname = new URL(baseUrl).hostname.toLowerCase();
     if ((hostname === 'api.deepseek.com' || hostname.endsWith('.deepseek.com')) && model === OPENAI_DEFAULT_MODEL) {
-      model = 'deepseek-chat';
+      model = DEEPSEEK_DEFAULT_MODEL;
     }
   } catch {
     // validateCredentials reports malformed URLs; keep normalization side-effect free.

@@ -3,14 +3,14 @@ import { normalizeProviderModel } from '../api/_vercel-proxy';
 import { normalizeCredentials } from '@/storage/credentials';
 
 describe('credentials normalization', () => {
-  it('maps the OpenAI default model to deepseek-chat for DeepSeek endpoints', () => {
+  it('maps the OpenAI default model to deepseek-v4-pro for DeepSeek endpoints', () => {
     expect(
       normalizeCredentials({
         baseUrl: 'https://api.deepseek.com',
         apiKey: 'secret',
         model: 'gpt-4o-mini'
       }).model
-    ).toBe('deepseek-chat');
+    ).toBe('deepseek-v4-pro');
   });
 
   it('keeps an explicit DeepSeek model unchanged', () => {
@@ -24,7 +24,7 @@ describe('credentials normalization', () => {
   });
 
   it('normalizes DeepSeek models in the proxy layer too', () => {
-    expect(normalizeProviderModel('https://api.deepseek.com', 'gpt-4o-mini')).toBe('deepseek-chat');
+    expect(normalizeProviderModel('https://api.deepseek.com', 'gpt-4o-mini')).toBe('deepseek-v4-pro');
     expect(normalizeProviderModel('https://api.deepseek.com', 'deepseek-reasoner')).toBe('deepseek-reasoner');
   });
 });
