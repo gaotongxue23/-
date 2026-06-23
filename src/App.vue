@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineComponent, h, nextTick, onMounted, reactive, ref } from 'vue';
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import type { PropType } from 'vue';
 import {
   CalendarDays,
@@ -132,6 +132,7 @@ const eventTitleDraft = ref('');
 const eventNoteDraft = ref('');
 const showOpeningAnimation = ref(true);
 const openingAnimationClosing = ref(false);
+const openingAnimationEntering = ref(false);
 const masterModalOpen = ref(false);
 const profileModalOpen = ref(false);
 const historyModalOpen = ref(false);
@@ -1066,20 +1067,51 @@ async function addLifeEvent() {
   setMessage('人生事件已写入档案');
 }
 
-function startOpeningAnimation() {
-  window.setTimeout(() => {
-    openingAnimationClosing.value = true;
-  }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 2200 : 3800);
-  window.setTimeout(() => {
+let openingCloseTimer: number | undefined;
+let openingHideTimer: number | undefined;
+
+function prefersReducedOpeningMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function clearOpeningTimers() {
+  if (openingCloseTimer !== undefined) {
+    window.clearTimeout(openingCloseTimer);
+    openingCloseTimer = undefined;
+  }
+  if (openingHideTimer !== undefined) {
+    window.clearTimeout(openingHideTimer);
+    openingHideTimer = undefined;
+  }
+}
+
+function finishOpeningAnimation(mode: 'collapse' | 'enter', hideDelay?: number) {
+  if (!showOpeningAnimation.value || openingAnimationClosing.value) return;
+  clearOpeningTimers();
+  openingAnimationEntering.value = mode === 'enter';
+  openingAnimationClosing.value = true;
+  const reduced = prefersReducedOpeningMotion();
+  const delay = hideDelay ?? (mode === 'enter' ? (reduced ? 180 : 680) : (reduced ? 320 : 620));
+  openingHideTimer = window.setTimeout(() => {
     showOpeningAnimation.value = false;
-  }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 2600 : 4400);
+    openingAnimationEntering.value = false;
+    openingHideTimer = undefined;
+  }, delay);
+}
+
+function startOpeningAnimation() {
+  clearOpeningTimers();
+  openingCloseTimer = window.setTimeout(() => {
+    finishOpeningAnimation('collapse');
+  }, prefersReducedOpeningMotion() ? 2200 : 3800);
+}
+
+function enterFromOpeningAnimation() {
+  finishOpeningAnimation('enter');
 }
 
 function skipOpeningAnimation() {
-  openingAnimationClosing.value = true;
-  window.setTimeout(() => {
-    showOpeningAnimation.value = false;
-  }, 220);
+  finishOpeningAnimation('enter');
 }
 
 async function removeFact(fact: string) {
@@ -1657,6 +1689,10 @@ onMounted(async () => {
     loading.value = false;
   }
 });
+
+onBeforeUnmount(() => {
+  clearOpeningTimers();
+});
 </script>
 
 <template>
@@ -1680,14 +1716,14 @@ onMounted(async () => {
     <div
       v-if="showOpeningAnimation"
       class="bagua-opening"
-      :class="{ leaving: openingAnimationClosing }"
+      :class="{ leaving: openingAnimationClosing, entering: openingAnimationEntering }"
       role="status"
       aria-live="polite"
       aria-label="八卦阵启动中"
     >
       <div class="opening-aura" aria-hidden="true"></div>
-      <div class="bagua-stage" aria-hidden="true">
-        <div class="opening-spark-field">
+      <button class="bagua-stage" type="button" aria-label="进入主页" @click="enterFromOpeningAnimation">
+        <div class="opening-spark-field" aria-hidden="true">
           <span
             v-for="spark in 16"
             :key="spark"
@@ -1695,10 +1731,10 @@ onMounted(async () => {
             :style="`--spark-angle: ${(spark - 1) * 22.5}deg; --spark-delay: ${spark * 38}ms`"
           ></span>
         </div>
-        <div class="opening-runic-ring outer"></div>
-        <div class="opening-runic-ring inner"></div>
-        <div class="opening-sweep"></div>
-        <div class="bagua-ring">
+        <div class="opening-runic-ring outer" aria-hidden="true"></div>
+        <div class="opening-runic-ring inner" aria-hidden="true"></div>
+        <div class="opening-sweep" aria-hidden="true"></div>
+        <div class="bagua-ring" aria-hidden="true">
           <span class="bagua-symbol">☰</span>
           <span class="bagua-symbol">☱</span>
           <span class="bagua-symbol">☲</span>
@@ -1708,8 +1744,8 @@ onMounted(async () => {
           <span class="bagua-symbol">☵</span>
           <span class="bagua-symbol">☴</span>
         </div>
-        <div class="taiji-disc"></div>
-      </div>
+        <div class="taiji-disc" aria-hidden="true"></div>
+      </button>
       <p>乾坤启阵</p>
       <button class="opening-skip" type="button" @click="skipOpeningAnimation">跳过仪式</button>
     </div>

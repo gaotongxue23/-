@@ -725,8 +725,16 @@ button:disabled {
   pointer-events: none;
 }
 
-.bagua-opening.leaving .bagua-stage {
+.bagua-opening.leaving:not(.entering) .bagua-stage {
   animation: opening-collapse 520ms var(--ease) forwards;
+}
+
+.bagua-opening.entering {
+  transition-duration: 680ms;
+}
+
+.bagua-opening.entering .bagua-stage {
+  animation: opening-enter-zoom 680ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .bagua-opening p {
@@ -776,10 +784,32 @@ button:disabled {
   place-items: center;
   width: clamp(280px, 64vw, 400px);
   aspect-ratio: 1;
+  padding: 0;
+  color: inherit;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
   opacity: 0;
   transform: scale(0.72) rotate(-24deg);
   animation: opening-stage-in 900ms var(--ease) 80ms forwards;
   will-change: transform, opacity;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bagua-stage:hover::before,
+.bagua-stage:focus-visible::before {
+  border-color: rgba(255, 239, 196, 0.68);
+  box-shadow:
+    inset 0 0 0 12px rgba(255, 253, 248, 0.06),
+    inset 0 0 48px rgba(236, 197, 102, 0.14),
+    0 0 140px rgba(236, 197, 102, 0.28);
+}
+
+.bagua-stage:focus-visible {
+  outline: 2px solid rgba(255, 239, 196, 0.7);
+  outline-offset: 10px;
 }
 
 .bagua-stage::before,
@@ -3034,6 +3064,26 @@ button:focus-visible,
     opacity: 0;
     filter: blur(10px);
     transform: scale(0.42) rotate(80deg);
+  }
+}
+
+@keyframes opening-enter-zoom {
+  0% {
+    opacity: 1;
+    filter: blur(0) brightness(1);
+    transform: scale(1) rotate(0deg);
+  }
+
+  46% {
+    opacity: 1;
+    filter: blur(0) brightness(1.18);
+    transform: scale(1.22) rotate(8deg);
+  }
+
+  100% {
+    opacity: 0;
+    filter: blur(14px) brightness(1.42);
+    transform: scale(3.15) rotate(34deg);
   }
 }
 

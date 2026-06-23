@@ -68,6 +68,21 @@ function fallbackModelsUrl(baseUrl: string) {
   return null;
 }
 
+function modelUrlCandidates(baseUrl: string) {
+  const primary = normalizeModelsUrl(baseUrl);
+  const candidates = [primary];
+  const fallback = fallbackModelsUrl(baseUrl);
+  if (fallback) candidates.push(fallback);
+
+  const url = new URL(primary);
+  if (url.pathname.endsWith('/models') && !url.pathname.endsWith('/v1/models')) {
+    const withV1 = new URL(primary);
+    withV1.pathname = `${withV1.pathname.slice(0, -'/models'.length).replace(/\/+$/, '')}/v1/models`;
+    candidates.push(withV1.toString());
+  }
+  return [...new Set(candidates)];
+}
+
 function classifyStatus(status: number) {
   if (status === 401 || status === 403) return '鉴权失败，请检查 key 与 base_url';
   if (status === 400) return '请求格式不被上游接受，请检查模型、base_url 和消息格式';
@@ -120,7 +135,7 @@ function knownProviderModels(baseUrl: string) {
   try {
     const hostname = new URL(baseUrl.trim()).hostname.toLowerCase();
     if (hostname === 'api.deepseek.com' || hostname.endsWith('.deepseek.com')) {
-      return ['deepseek-chat', 'deepseek-reasoner'];
+      return ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner'];
     }
     if (hostname === 'api.openai.com' || hostname.endsWith('.openai.com')) {
       return ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'];
@@ -134,10 +149,13 @@ function knownProviderModels(baseUrl: string) {
 function preferredModelScore(id: string) {
   const lower = id.toLowerCase();
   if (lower === 'gpt-5-codex') return 0;
-  if (lower === 'deepseek-chat') return 0;
+  if (lower === 'deepseek-v4-pro') return 0;
+  if (lower === 'deepseek-v4-flash') return 1;
+  if (lower === 'deepseek-chat') return 2;
+  if (lower === 'deepseek-reasoner') return 3;
   if (lower === 'gpt-4o-mini') return 1;
-  if (lower.includes('chat')) return 2;
-  if (lower.includes('gpt') || lower.includes('deepseek') || lower.includes('qwen') || lower.includes('glm')) return 3;
+  if (lower.includes('chat')) return 4;
+  if (lower.includes('gpt') || lower.includes('deepseek') || lower.includes('qwen') || lower.includes('glm')) return 5;
   return 8;
 }
 
@@ -162,10 +180,13 @@ async function callModelsEndpoint(payload: ModelListPayload) {
       },
       signal: controller.signal
     };
-    const upstream = await fetch(normalizeModelsUrl(payload.base_url!), init);
-    const fallback = upstream.status === 404 ? fallbackModelsUrl(payload.base_url!) : null;
-    if (fallback) return fetch(fallback, init);
-    return upstream;
+    let lastResponse: Response | null = null;
+    for (const url of modelUrlCandidates(payload.base_url!)) {
+      const upstream = await fetch(url, init);
+      if (upstream.ok || upstream.status !== 404) return upstream;
+      lastResponse = upstream;
+    }
+    return lastResponse ?? fetch(normalizeModelsUrl(payload.base_url!), init);
   } finally {
     clearTimeout(timeout);
   }
