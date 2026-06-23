@@ -1251,6 +1251,7 @@ button:disabled {
 .mobile-follow-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 46px;
+  align-items: end;
   gap: 8px;
   margin-top: 12px;
   padding: 6px;
@@ -1260,10 +1261,26 @@ button:disabled {
   box-shadow: var(--shadow-line);
 }
 
-.mobile-follow-card input {
+.mobile-follow-card textarea {
+  min-height: 38px;
+  max-height: 112px;
+  padding: 8px 4px;
   border: 0;
   background: transparent;
   box-shadow: none;
+  resize: none;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.mobile-follow-card textarea:focus {
+  box-shadow: none;
+}
+
+.mobile-follow-card .composer-send {
+  align-self: end;
 }
 
 .mobile-empty-card {
@@ -2254,6 +2271,7 @@ button:focus-visible,
 
 .follow-row {
   flex: 0 0 auto;
+  align-items: flex-end;
   gap: 8px;
   min-height: 48px;
   padding: 5px 5px 5px 12px;
@@ -2273,17 +2291,27 @@ button:focus-visible,
   box-shadow: var(--focus-ring);
 }
 
-.follow-row input {
+.follow-row textarea {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 36px;
-  padding: 6px 0;
+  max-height: 132px;
+  padding: 7px 0;
   border: 0;
   background: transparent;
+  resize: none;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
-.follow-row input:focus {
+.follow-row textarea:focus {
   box-shadow: none;
+}
+
+.follow-row .composer-send {
+  align-self: flex-end;
 }
 
 .chat-composer-shell {
@@ -2562,6 +2590,8 @@ button:focus-visible,
   color: var(--ink-soft);
   font-size: 16px;
   line-height: 1.72;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .markdown-body h1,
@@ -2611,6 +2641,7 @@ button:focus-visible,
 .markdown-body p {
   max-width: 720px;
   margin: 0 0 12px;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
@@ -2722,6 +2753,8 @@ button:focus-visible,
 
 .chat-bubble {
   min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: 11px 13px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md) var(--radius-md) var(--radius-md) var(--radius-sm);

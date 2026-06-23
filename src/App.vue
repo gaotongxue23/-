@@ -409,6 +409,34 @@ async function requestMobileReading(task: FortuneTask, question?: string) {
   await requestReading(task, question);
 }
 
+function handleFollowQuestionKeydown(event: KeyboardEvent, mobile = false) {
+  if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+  event.preventDefault();
+  if (mobile) {
+    void requestMobileReading('follow_up', followQuestion.value);
+    return;
+  }
+  void requestReading('follow_up', followQuestion.value);
+}
+
+function resizeFollowQuestionInput(event: Event) {
+  const element = event.target;
+  if (!(element instanceof HTMLTextAreaElement)) return;
+  element.style.height = 'auto';
+  const maxHeight = Number.parseFloat(window.getComputedStyle(element).maxHeight);
+  const nextHeight = Math.min(element.scrollHeight, Number.isFinite(maxHeight) ? maxHeight : element.scrollHeight);
+  element.style.height = `${nextHeight}px`;
+  element.style.overflowY = element.scrollHeight > nextHeight ? 'auto' : 'hidden';
+}
+
+async function resetFollowQuestionInputs() {
+  await nextTick();
+  document.querySelectorAll<HTMLTextAreaElement>('.follow-question-input').forEach((element) => {
+    element.style.height = '';
+    element.style.overflowY = '';
+  });
+}
+
 async function requestMobileDailyLot() {
   showMobileTab('reading');
   await nextTick();
@@ -1300,6 +1328,7 @@ async function requestReading(task: FortuneTask, question?: string) {
   try {
     roleHistory.value = await appendRoleMessage(selectedPersona.value.id, { role: 'user', content: userText });
     followQuestion.value = '';
+    await resetFollowQuestionInputs();
     await scrollAnswerToBottom();
     const fullText = await streamFortuneReading({
       credentials: credentialsDraft,
@@ -2235,7 +2264,15 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div class="mobile-follow-card">
-          <input v-model="followQuestion" type="text" :placeholder="t('home.askPlaceholder')" @keyup.enter="requestMobileReading('follow_up', followQuestion)" />
+          <textarea
+            v-model="followQuestion"
+            class="follow-question-input"
+            rows="1"
+            :placeholder="t('home.askPlaceholder')"
+            @input="resizeFollowQuestionInput"
+            @focus="resizeFollowQuestionInput"
+            @keydown="handleFollowQuestionKeydown($event, true)"
+          ></textarea>
           <button
             class="composer-send"
             type="button"
@@ -2568,7 +2605,15 @@ onBeforeUnmount(() => {
           </div>
           <div class="chat-composer-shell">
             <div class="follow-row" role="group" aria-label="追问输入">
-              <input v-model="followQuestion" type="text" placeholder="向大师追问" @keyup.enter="requestReading('follow_up', followQuestion)" />
+              <textarea
+                v-model="followQuestion"
+                class="follow-question-input"
+                rows="1"
+                placeholder="向大师追问"
+                @input="resizeFollowQuestionInput"
+                @focus="resizeFollowQuestionInput"
+                @keydown="handleFollowQuestionKeydown"
+              ></textarea>
               <button
                 class="composer-send"
                 type="button"
