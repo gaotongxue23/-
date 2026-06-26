@@ -19,6 +19,7 @@ export interface BirthDateTimeInput {
   isLeapMonth?: boolean;
   location?: {
     name?: string;
+    latitude?: number;
     longitude: number;
   };
   ziHourPolicy?: ZiHourPolicy;

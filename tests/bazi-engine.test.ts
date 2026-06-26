@@ -122,8 +122,11 @@ describe('bazi-engine', () => {
     });
 
     expect(chart.pillars.month.shenSha).toContain('天乙贵人');
+    expect(chart.pillars.year.shenSha).toContain('太极贵人');
+    expect(chart.pillars.year.shenSha).toContain('灾煞');
     expect(chart.pillars.day.shenSha).toContain('驿马');
     expect(chart.pillars.hour.shenSha).toContain('桃花（咸池）');
+    expect(chart.pillars.hour.shenSha).toContain('天喜');
   });
 
   it('输出加权五行旺衰与命局内部关系', () => {

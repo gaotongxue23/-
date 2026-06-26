@@ -569,6 +569,173 @@ button:disabled {
   padding: 20px;
 }
 
+.birth-location-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.birth-location-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink);
+}
+
+.birth-location-heading span,
+.birth-location-heading small {
+  display: block;
+}
+
+.birth-location-heading span {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.birth-location-heading small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.location-search-field {
+  position: relative;
+  display: block;
+}
+
+.location-search-field svg {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.location-search-field input {
+  padding-left: 38px;
+}
+
+.location-unknown-button {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  background: var(--surface);
+  font-weight: 700;
+  text-align: left;
+  transition:
+    border-color 180ms var(--ease),
+    background-color 180ms var(--ease),
+    color 180ms var(--ease);
+}
+
+.location-unknown-button:hover,
+.location-unknown-button.active {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+  background: var(--bg-soft);
+}
+
+.location-search-results {
+  display: grid;
+  gap: 6px;
+  max-height: 172px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.location-search-results button {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+}
+
+.location-search-results button:hover,
+.location-search-results button:focus-visible {
+  background: var(--bg-soft);
+  outline: none;
+}
+
+.location-search-results span,
+.location-search-results small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-search-results small {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.location-select-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.coordinate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.birth-location-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.birth-location-summary span,
+.birth-location-summary small {
+  min-width: 0;
+}
+
+.birth-location-summary span {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.birth-location-summary small,
+.true-solar-preview {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.true-solar-preview {
+  margin: 0;
+}
+
 .crop-backdrop {
   z-index: 95;
 }
@@ -1831,22 +1998,32 @@ button:focus-visible,
 .pillar-shensha-row .pillar-info-cell {
   display: flex;
   min-height: 58px;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-start;
-  gap: 3px;
+  justify-content: center;
+  align-content: center;
+  gap: 5px;
   color: #9f8550;
 }
 
 .pillar-shensha-row b,
 .pillar-shensha-row em {
-  font-size: 13px;
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 2px 6px;
+  border: 1px solid rgba(159, 133, 80, 0.28);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 253, 248, 0.72);
+  font-size: 12px;
   font-style: normal;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.2;
 }
 
 .pillar-shensha-row em {
+  border-color: transparent;
+  background: transparent;
   color: var(--muted);
 }
 
@@ -3725,6 +3902,24 @@ button:focus-visible,
   .upload-preview {
     width: 100%;
     max-width: 220px;
+  }
+
+  .location-select-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .coordinate-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .birth-location-summary,
+  .location-search-results button {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .location-search-results small {
+    flex-shrink: 1;
   }
 
   .mobile-bottom-tabs {

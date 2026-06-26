@@ -12,9 +12,11 @@ import {
   LayoutDashboard,
   Languages,
   Lock,
+  MapPin,
   MessageCircle,
   RefreshCw,
   Save,
+  Search,
   Send,
   ShieldCheck,
   Sparkles,
@@ -26,7 +28,9 @@ import {
   Wand2
 } from 'lucide-vue-next';
 import { createBaziChart } from '@/bazi/engine';
+import { BIRTH_LOCATIONS, findBirthLocationById, getBirthLocationLabel, type BirthLocation } from '@/bazi/locations';
 import { STEM_ELEMENTS } from '@/bazi/relations';
+import { formatCivilDateTime, getTrueSolarCorrectionMinutes, normalizeCivilDateTime } from '@/bazi/solar-time';
 import { localeStorageKey, normalizeLocale, translate, type Locale, type TranslationKey } from '@/i18n';
 import type { BaziChart, BirthDateTimeInput, ChartFactor, FiveElement, LuckCycle, Pillar, PillarName } from '@/bazi/types';
 import { buildFortuneMessages, buildPersonaGenerationMessages, type FortuneTask, type PersonaGenerationDraft } from '@/persona/prompt';
@@ -165,7 +169,12 @@ function createDefaultBirthInput(): BirthDateTimeInput {
 
 const birthForm = reactive<BirthDateTimeInput>(createDefaultBirthInput());
 
+const latitudeDraft = ref<string | number>('');
 const longitudeDraft = ref<string | number>('');
+const locationSearch = ref('');
+const selectedLocationId = ref('');
+const selectedProvince = ref('');
+const selectedCity = ref('');
 const directPillarsText = ref('');
 
 const credentialsDraft = reactive<LocalCredentials>({
@@ -289,6 +298,44 @@ const cropMaxOffsetY = computed(() => {
   const frame = cropFrameRef.value;
   if (!frame) return 0;
   return Math.max(0, Math.round((cropSession.baseHeight * cropSession.zoom - frame.clientHeight) / 2));
+});
+const selectedBirthLocation = computed(() => findBirthLocationById(selectedLocationId.value));
+const locationProvinces = computed(() => uniqueValues(BIRTH_LOCATIONS.map((location) => location.province)));
+const locationCities = computed(() =>
+  selectedProvince.value
+    ? uniqueValues(BIRTH_LOCATIONS.filter((location) => location.province === selectedProvince.value).map((location) => location.city))
+    : []
+);
+const locationDistricts = computed(() =>
+  selectedProvince.value && selectedCity.value
+    ? BIRTH_LOCATIONS.filter((location) => location.province === selectedProvince.value && location.city === selectedCity.value)
+    : []
+);
+const locationSearchResults = computed(() => {
+  const keyword = locationSearch.value.trim().toLocaleLowerCase();
+  if (!keyword) return [];
+  return BIRTH_LOCATIONS.filter((location) => {
+    const searchable = [location.province, location.city, location.district].join(' ').toLocaleLowerCase();
+    return searchable.includes(keyword);
+  }).slice(0, 8);
+});
+const trueSolarPreview = computed(() => {
+  if (birthForm.calendarType === 'bazi') return '';
+  const latitude = Number(String(latitudeDraft.value ?? '').trim());
+  const longitude = Number(String(longitudeDraft.value ?? '').trim());
+  if (!Number.isFinite(longitude)) return '未选择出生地时按北京时间排盘，未启用真太阳时校正';
+  const civilTime = {
+    year: Number(birthForm.year),
+    month: Number(birthForm.month),
+    day: Number(birthForm.day),
+    hour: Number(birthForm.hour),
+    minute: Number(birthForm.minute),
+    second: 0
+  };
+  const correction = getTrueSolarCorrectionMinutes(civilTime, longitude);
+  const corrected = normalizeCivilDateTime(civilTime, correction.totalCorrectionMinutes);
+  const position = Number.isFinite(latitude) ? `北纬${formatCoordinate(latitude)} 东经${formatCoordinate(longitude)}` : `东经${formatCoordinate(longitude)}`;
+  return `${position}，真太阳时 ${formatCivilDateTime(corrected).slice(0, 16)}，校正 ${formatSignedMinutes(correction.totalCorrectionMinutes)}`;
 });
 const activeReadingBlocks = computed(() => parseMarkdown(readingText.value));
 const selectedPersonaEngine = computed(() => (selectedPersona.value ? engineById(selectedPersona.value.engineId) : undefined));
@@ -916,7 +963,10 @@ function syncBirthDraftFromInput(input: BirthDateTimeInput, name = '', id = '') 
   Object.assign(birthForm, cloneBirthInput(input));
   birthProfileName.value = name;
   editingBirthProfileId.value = id;
+  latitudeDraft.value = input.location?.latitude === undefined ? '' : String(input.location.latitude);
   longitudeDraft.value = input.location?.longitude === undefined ? '' : String(input.location.longitude);
+  syncSelectedLocationFromInput(input);
+  locationSearch.value = '';
   directPillarsText.value = input.directPillars
     ? [input.directPillars.year, input.directPillars.month, input.directPillars.day, input.directPillars.hour].filter(Boolean).join(' ')
     : '';
@@ -980,6 +1030,82 @@ function formatLuckCycleRange(cycle: LuckCycle) {
   return `${startYear}-${endYear} · ${startAge}-${endAge}岁`;
 }
 
+function uniqueValues(values: string[]) {
+  return [...new Set(values)];
+}
+
+function formatSignedMinutes(value: number) {
+  const rounded = Math.round(value);
+  if (rounded === 0) return '0分钟';
+  return `${rounded > 0 ? '+' : ''}${rounded}分钟`;
+}
+
+function formatCoordinate(value: number) {
+  return value.toFixed(4);
+}
+
+function normalizeCoordinateDraft(field: 'latitude' | 'longitude') {
+  const draft = field === 'latitude' ? latitudeDraft : longitudeDraft;
+  const value = Number(String(draft.value ?? '').trim());
+  draft.value = Number.isFinite(value) ? formatCoordinate(value) : '';
+}
+
+function clearSelectedLocation() {
+  selectedLocationId.value = '';
+  selectedProvince.value = '';
+  selectedCity.value = '';
+  latitudeDraft.value = '';
+  longitudeDraft.value = '';
+  locationSearch.value = '';
+  birthForm.location = undefined;
+}
+
+function setSelectedLocation(location: BirthLocation | undefined) {
+  if (!location) {
+    clearSelectedLocation();
+    return;
+  }
+  selectedLocationId.value = location.id;
+  selectedProvince.value = location.province;
+  selectedCity.value = location.city;
+  latitudeDraft.value = formatCoordinate(location.latitude);
+  longitudeDraft.value = formatCoordinate(location.longitude);
+  birthForm.location = {
+    name: getBirthLocationLabel(location),
+    latitude: location.latitude,
+    longitude: location.longitude
+  };
+}
+
+function syncSelectedLocationFromInput(input: BirthDateTimeInput) {
+  const longitude = input.location?.longitude;
+  if (longitude === undefined) {
+    clearSelectedLocation();
+    return;
+  }
+  const matched = BIRTH_LOCATIONS.find((location) => location.id !== 'unknown-beijing-time' && Math.abs(location.longitude - longitude) < 0.0001);
+  if (matched) {
+    setSelectedLocation(matched);
+  } else {
+    selectedLocationId.value = '';
+    latitudeDraft.value = input.location?.latitude === undefined ? '' : formatCoordinate(input.location.latitude);
+    longitudeDraft.value = formatCoordinate(longitude);
+  }
+}
+
+function handleProvinceChange() {
+  selectedCity.value = locationCities.value[0] ?? '';
+  setSelectedLocation(locationDistricts.value[0]);
+}
+
+function handleCityChange() {
+  setSelectedLocation(locationDistricts.value[0]);
+}
+
+function handleDistrictChange() {
+  setSelectedLocation(findBirthLocationById(selectedLocationId.value));
+}
+
 async function activateBirthProfile(profile: BirthProfile, options: { silent?: boolean; closeModal?: boolean } = {}) {
   const birthInput = cloneBirthInput(profile.input);
   const nextChart = createBaziChart(birthInput);
@@ -991,15 +1117,19 @@ async function activateBirthProfile(profile: BirthProfile, options: { silent?: b
 }
 
 function updateLocation() {
+  const rawLatitude = String(latitudeDraft.value ?? '').trim();
   const rawLongitude = String(longitudeDraft.value ?? '').trim();
   if (!rawLongitude) {
     birthForm.location = undefined;
     return;
   }
+  const latitude = Number(rawLatitude);
   const longitude = Number(rawLongitude);
+  const selected = selectedBirthLocation.value;
   birthForm.location = Number.isFinite(longitude)
     ? {
-        name: '出生地',
+        name: selected ? getBirthLocationLabel(selected) : '出生地',
+        latitude: Number.isFinite(latitude) ? latitude : selected?.latitude,
         longitude
       }
     : undefined;
@@ -2077,10 +2207,77 @@ onBeforeUnmount(() => {
               <input v-model="birthForm.isLeapMonth" type="checkbox" />
               闰月
             </label>
-            <label v-if="birthForm.calendarType !== 'bazi'">
-              出生地经度
-              <input v-model="longitudeDraft" type="number" step="0.0001" placeholder="例如 116.397" />
-            </label>
+            <section v-if="birthForm.calendarType !== 'bazi'" class="birth-location-panel" aria-label="出生地">
+              <div class="birth-location-heading">
+                <div>
+                  <span>出生地</span>
+                  <small>用于获取经纬度并校正真太阳时</small>
+                </div>
+                <MapPin :size="18" aria-hidden="true" />
+              </div>
+              <button class="location-unknown-button" type="button" :class="{ active: !selectedBirthLocation && !longitudeDraft }" @click="clearSelectedLocation">
+                未选择出生地（按北京时间）
+              </button>
+              <label class="location-search-field">
+                <Search :size="17" aria-hidden="true" />
+                <input v-model.trim="locationSearch" type="search" placeholder="搜索全国城市及地区" />
+              </label>
+              <div v-if="locationSearchResults.length" class="location-search-results">
+                <button
+                  v-for="location in locationSearchResults"
+                  :key="location.id"
+                  type="button"
+                  @click="setSelectedLocation(location); locationSearch = ''"
+                >
+                  <span>{{ getBirthLocationLabel(location) }}</span>
+                  <small>北纬{{ location.latitude.toFixed(2) }} 东经{{ location.longitude.toFixed(2) }}</small>
+                </button>
+              </div>
+              <div class="location-select-grid">
+                <label>
+                  省份
+                  <select v-model="selectedProvince" @change="handleProvinceChange">
+                    <option value="" disabled>请选择省份</option>
+                    <option v-for="province in locationProvinces" :key="province" :value="province">{{ province }}</option>
+                  </select>
+                </label>
+                <label>
+                  城市
+                  <select v-model="selectedCity" :disabled="!selectedProvince" @change="handleCityChange">
+                    <option value="" disabled>请选择城市</option>
+                    <option v-for="city in locationCities" :key="city" :value="city">{{ city }}</option>
+                  </select>
+                </label>
+                <label>
+                  区县
+                  <select v-model="selectedLocationId" :disabled="!selectedCity" @change="handleDistrictChange">
+                    <option value="" disabled>请选择区县</option>
+                    <option v-for="location in locationDistricts" :key="location.id" :value="location.id">{{ location.district }}</option>
+                  </select>
+                </label>
+              </div>
+              <div class="coordinate-grid">
+                <label>
+                  纬度微调
+                  <input v-model="latitudeDraft" type="text" inputmode="decimal" placeholder="例如 39.9042" @blur="normalizeCoordinateDraft('latitude')" />
+                </label>
+                <label>
+                  经度微调
+                  <input v-model="longitudeDraft" type="text" inputmode="decimal" placeholder="例如 116.3970" @blur="normalizeCoordinateDraft('longitude')" />
+                </label>
+              </div>
+              <div class="birth-location-summary">
+                <span>{{ selectedBirthLocation ? getBirthLocationLabel(selectedBirthLocation) : (longitudeDraft ? '手动经纬度' : '未选择出生地') }}</span>
+                <small v-if="longitudeDraft && latitudeDraft">
+                  北纬{{ formatCoordinate(Number(latitudeDraft)) }} 东经{{ formatCoordinate(Number(longitudeDraft)) }}
+                </small>
+                <small v-else-if="longitudeDraft">
+                  东经{{ formatCoordinate(Number(longitudeDraft)) }}
+                </small>
+                <small v-else>未提供出生地经度时，将按钟表时间排盘。</small>
+              </div>
+              <p class="true-solar-preview">{{ trueSolarPreview }}</p>
+            </section>
             <label v-if="birthForm.calendarType !== 'bazi'">
               子时规则
               <select v-model="birthForm.ziHourPolicy">
