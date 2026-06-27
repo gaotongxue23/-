@@ -217,6 +217,7 @@ const streaming = ref(false);
 const drawingLot = ref(false);
 const followQuestion = ref('');
 const answerBoxRef = ref<HTMLDivElement | null>(null);
+const exportMenuOpen = ref(false);
 const commercialState = reactive({
   memberUntil: '',
   memberPlan: '' as MembershipPlanId | '',
@@ -1971,6 +1972,7 @@ function buildReportDocument(message: ChatMessage) {
 
 async function exportReportPdf() {
   const message = latestExportableReport.value;
+  exportMenuOpen.value = false;
   if (!message) {
     setMessage('请先生成专业报告或流派会诊，命盘速览不支持导出');
     return;
@@ -2462,6 +2464,7 @@ async function createPdfFromReportCanvas(report: { canvas: HTMLCanvasElement; wi
 
 async function exportReportImage() {
   const message = latestExportableReport.value;
+  exportMenuOpen.value = false;
   if (!message) {
     setMessage('请先生成专业报告或流派会诊，命盘速览不支持导出');
     return;
@@ -4006,14 +4009,26 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <div v-if="latestExportableReport" class="report-export-actions" aria-label="报告导出">
-              <button class="ghost-button export-button" type="button" :disabled="streaming" @click="exportReportPdf">
-                <FileText :size="16" aria-hidden="true" />
-                PDF
-              </button>
-              <button class="ghost-button export-button" type="button" :disabled="streaming" @click="exportReportImage">
+              <button
+                class="ghost-button export-button report-export-trigger"
+                type="button"
+                :disabled="streaming"
+                :aria-expanded="exportMenuOpen"
+                @click="exportMenuOpen = !exportMenuOpen"
+              >
                 <Download :size="16" aria-hidden="true" />
-                图片
+                导出报告
               </button>
+              <div v-if="exportMenuOpen" class="report-export-menu" role="menu">
+                <button type="button" role="menuitem" @click="exportReportPdf">
+                  <FileText :size="16" aria-hidden="true" />
+                  <span>PDF 文件</span>
+                </button>
+                <button type="button" role="menuitem" @click="exportReportImage">
+                  <Download :size="16" aria-hidden="true" />
+                  <span>图片长图</span>
+                </button>
+              </div>
             </div>
             <span v-else class="report-export-hint">专业报告/流派会诊可导出</span>
           </div>

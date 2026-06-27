@@ -2954,10 +2954,54 @@ button:focus-visible,
 }
 
 .report-export-actions {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
+}
+
+.report-export-trigger {
+  min-width: 112px;
+  padding: 0 12px;
+}
+
+.report-export-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 8;
+  display: grid;
+  min-width: 148px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 253, 248, 0.98);
+  box-shadow: rgba(20, 20, 19, 0.16) 0 14px 34px;
+}
+
+.report-export-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  color: var(--ink-soft);
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.report-export-menu button:last-child {
+  border-bottom: 0;
+}
+
+.report-export-menu button:hover {
+  color: var(--ink);
+  background: var(--surface-raised);
 }
 
 .report-export-hint {
@@ -3702,7 +3746,7 @@ button:focus-visible,
 @media (max-width: 700px) {
   .app-shell {
     --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
-    --mobile-topbar-space: 88px;
+    --mobile-topbar-space: 14px;
     --mobile-bottom-nav-space: calc(96px + var(--mobile-safe-bottom));
     height: 100svh;
     height: 100dvh;
@@ -3721,15 +3765,7 @@ button:focus-visible,
   }
 
   .topbar {
-    top: 10px;
-    left: 12px;
-    right: 12px;
-    align-items: center;
-    flex-direction: row;
-    gap: 8px;
-    min-height: 64px;
-    padding: 8px;
-    overflow: visible;
+    display: none;
   }
 
   .brand-button {
@@ -4100,6 +4136,15 @@ button:focus-visible,
     gap: 6px;
   }
 
+  .report-export-trigger {
+    min-width: 104px;
+    padding: 0 10px;
+  }
+
+  .report-export-menu {
+    min-width: 156px;
+  }
+
   .report-export-hint {
     display: none;
   }
@@ -4120,9 +4165,9 @@ button:focus-visible,
   }
 
   .reading-chat-header .export-button {
-    width: 38px;
-    min-width: 38px;
-    padding: 0;
+    width: auto;
+    min-width: 104px;
+    padding: 0 10px;
   }
 
   .reading-chat-header .export-button svg {
@@ -4130,7 +4175,7 @@ button:focus-visible,
   }
 
   .reading-chat-header .export-button {
-    font-size: 0;
+    font-size: 13px;
   }
 
   .workspace.mobile-tab-chart .chart-panel,
