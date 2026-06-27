@@ -461,11 +461,66 @@ function buildPromptLuck(luck: BaziChart['luck'], now: Date) {
   };
 }
 
+function birthGenderLabel(gender: BirthDateTimeInput['gender']) {
+  return gender === 'male' ? '男' : '女';
+}
+
+function calendarTypeLabel(calendarType: BirthDateTimeInput['calendarType']) {
+  if (calendarType === 'solar') return '公历';
+  if (calendarType === 'lunar') return '农历';
+  return '直接四柱';
+}
+
+function luckTimeBasisLabel(basis?: BirthDateTimeInput['luckTimeBasis']) {
+  return basis === 'trueSolar' ? '真太阳时' : '钟表时间';
+}
+
+function ziHourPolicyLabel(policy?: BirthDateTimeInput['ziHourPolicy']) {
+  return policy === 'lateZiSameDay' ? '晚子时不换日' : '晚子时换日';
+}
+
+function buildBirthInfo(chart: BaziChart, solarDateTime: string | null) {
+  const input = chart.input;
+  const isManual = input.calendarType === 'bazi';
+  return {
+    calendarType: input.calendarType,
+    calendarLabel: calendarTypeLabel(input.calendarType),
+    gender: input.gender,
+    genderLabel: birthGenderLabel(input.gender),
+    originalDateTime: isManual
+      ? null
+      : {
+          year: input.year,
+          month: input.month,
+          day: input.day,
+          hour: input.hour,
+          minute: input.minute,
+          isLeapMonth: input.calendarType === 'lunar' ? Boolean(input.isLeapMonth) : undefined
+        },
+    directPillars: isManual ? input.directPillars : undefined,
+    location: input.location
+      ? {
+          name: input.location.name ?? '出生地',
+          latitude: input.location.latitude,
+          longitude: input.location.longitude
+        }
+      : null,
+    trueSolarTime: chart.trueSolarTime,
+    correctedSolarDateTime: solarDateTime,
+    ziHourPolicy: isManual ? undefined : input.ziHourPolicy ?? 'lateZiNextDay',
+    ziHourPolicyLabel: isManual ? undefined : ziHourPolicyLabel(input.ziHourPolicy),
+    luckTimeBasis: input.luckTimeBasis ?? 'clock',
+    luckTimeBasisLabel: luckTimeBasisLabel(input.luckTimeBasis)
+  };
+}
+
 function buildPromptFacts(chart: BaziChart, now: Date, solarDateTime: string | null) {
   return {
     source: chart.source,
+    birthInfo: buildBirthInfo(chart, solarDateTime),
     solarDateTime,
     lunarDateText: chart.lunarDateText,
+    trueSolarTime: chart.trueSolarTime,
     pillars: chart.pillars,
     dayMaster: chart.dayMaster,
     fiveElementStats: chart.fiveElementStats,

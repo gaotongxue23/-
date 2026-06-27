@@ -256,7 +256,16 @@ describe('OpenSpec 端到端验收', () => {
       roleHistory: []
     });
     const factLayer = createChartFactLayer(chart);
+    const parsedFactLayer = JSON.parse(factLayer);
+    expect(parsedFactLayer.birthInfo.gender).toBe('female');
+    expect(parsedFactLayer.birthInfo.genderLabel).toBe('女');
+    expect(parsedFactLayer.birthInfo.location.longitude).toBe(104.0668);
+    expect(parsedFactLayer.trueSolarTime.enabled).toBe(true);
     expect(firstMessages[0].content).toContain(factLayer);
+    expect(firstMessages[0].content).toContain('【交付规格层】');
+    expect(firstMessages[0].content).toContain('交付类型：命盘速览');
+    expect(firstMessages[0].content).toContain('## 基础档案');
+    expect(firstMessages[0].content).toContain('不得说“无法确认性别”');
     expect(switchedMessages[0].content).toContain(factLayer);
     expect(switchedMessages[0].content).not.toContain('前一次结论');
     expect(switchedMessages[0].content).not.toContain(firstPersona.name);

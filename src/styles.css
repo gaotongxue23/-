@@ -215,6 +215,27 @@ button:disabled {
   white-space: nowrap;
 }
 
+.membership-top-trigger {
+  max-width: 230px;
+  border-color: rgba(169, 130, 74, 0.42);
+  background: rgba(255, 250, 240, 0.88);
+}
+
+.membership-top-trigger small {
+  flex: 0 0 auto;
+  max-width: 92px;
+  overflow: hidden;
+  padding: 2px 6px;
+  color: #8f672e;
+  border: 1px solid rgba(169, 130, 74, 0.28);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 253, 248, 0.72);
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .icon-button {
   width: 40px;
   padding: 0;
@@ -333,6 +354,116 @@ button:disabled {
   width: min(820px, 100%);
 }
 
+.purchase-modal {
+  display: flex;
+  width: min(480px, 100%);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: rgba(20, 20, 19, 0.24) 0 24px 80px;
+}
+
+.membership-modal {
+  display: flex;
+  width: min(900px, 100%);
+  max-height: min(780px, calc(100vh - 48px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: rgba(20, 20, 19, 0.24) 0 24px 80px;
+}
+
+.membership-modal-heading {
+  align-items: flex-start;
+}
+
+.membership-modal-body {
+  display: grid;
+  gap: 18px;
+  overflow: auto;
+  padding: 20px;
+}
+
+.membership-modal-plans {
+  gap: 12px;
+}
+
+.membership-modal-plan {
+  min-height: 188px;
+  padding: 14px;
+}
+
+.membership-modal-plan b {
+  width: 100%;
+  margin-top: auto;
+  padding: 8px 10px;
+  text-align: center;
+  color: var(--surface);
+  border-radius: var(--radius-md);
+  background: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.membership-modal-plan.active b {
+  color: var(--ink);
+  border: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+
+.membership-compare {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 253, 248, 0.82);
+}
+
+.membership-compare-row {
+  display: grid;
+  grid-template-columns: 1.05fr repeat(3, minmax(0, 1fr));
+  min-width: 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.membership-compare-row:first-child {
+  border-top: 0;
+}
+
+.membership-compare-row > span,
+.membership-compare-row > strong {
+  min-width: 0;
+  padding: 11px 12px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.35;
+  border-left: 1px solid var(--line-soft);
+  word-break: break-word;
+}
+
+.membership-compare-row > span {
+  color: var(--ink);
+  border-left: 0;
+  background: rgba(250, 249, 245, 0.72);
+  font-weight: 700;
+}
+
+.membership-compare-row > strong {
+  font-weight: 600;
+}
+
+.membership-compare-head > span,
+.membership-compare-head > strong {
+  color: var(--ink);
+  background: rgba(250, 249, 245, 0.92);
+  font-size: 12px;
+}
+
 .modal-heading {
   display: flex;
   align-items: center;
@@ -365,6 +496,52 @@ button:disabled {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.purchase-modal > p {
+  margin: 0;
+  padding: 0 20px 14px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.purchase-price-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 8px;
+}
+
+.purchase-price-row strong {
+  color: var(--ink);
+  font-size: 32px;
+  line-height: 1;
+}
+
+.purchase-price-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.purchase-benefits {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0 20px 18px 38px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.purchase-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px 20px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--bg-soft);
 }
 
 .master-picker-grid {
@@ -1225,6 +1402,10 @@ button:disabled {
   padding: 18px;
 }
 
+.mobile-mine-card {
+  padding: 14px;
+}
+
 .mobile-card-head {
   display: flex;
   min-width: 0;
@@ -1411,6 +1592,37 @@ button:disabled {
   font-size: 13px;
 }
 
+.commercial-action-button {
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+.commercial-action-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commercial-action-button small {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  color: var(--ink-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 253, 248, 0.78);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.commercial-hint {
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .mobile-reading-prompts {
   display: none;
 }
@@ -1498,6 +1710,81 @@ button:disabled {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.membership-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.membership-plan-card {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 138px;
+  align-content: start;
+  gap: 5px;
+  padding: 10px 8px;
+  text-align: left;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 253, 248, 0.86);
+}
+
+.membership-plan-card.recommended {
+  border-color: rgba(169, 130, 74, 0.66);
+  background: rgba(255, 246, 226, 0.94);
+  box-shadow: inset 0 0 0 1px rgba(169, 130, 74, 0.12);
+}
+
+.membership-plan-card.active {
+  border-color: var(--ink);
+}
+
+.membership-plan-card small {
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px 6px;
+  overflow: hidden;
+  color: #8f672e;
+  border: 1px solid rgba(169, 130, 74, 0.28);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 253, 248, 0.76);
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.membership-plan-card span {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.membership-plan-card strong {
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.08;
+}
+
+.membership-plan-card em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.membership-plan-card p {
+  display: -webkit-box;
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.42;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .master-rail,
@@ -3843,6 +4130,19 @@ button:focus-visible,
     -webkit-overflow-scrolling: touch;
   }
 
+  .workspace.mobile-tab-chart .chart-service-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .workspace.mobile-tab-chart .chart-service-actions .commercial-action-button:not(.chart-overview-action) {
+    display: none;
+  }
+
+  .workspace.mobile-tab-chart .chart-service-actions .chart-overview-action {
+    width: 100%;
+  }
+
   .chat-message {
     max-width: min(92%, 420px);
   }
@@ -3877,6 +4177,40 @@ button:focus-visible,
     min-height: 0;
   }
 
+  .membership-modal {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    border-radius: 14px;
+  }
+
+  .membership-modal-body {
+    gap: 12px;
+    padding: 12px 14px 14px;
+  }
+
+  .membership-modal-plans {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .membership-modal-plan {
+    min-height: 0;
+    gap: 4px;
+    padding: 10px 12px;
+  }
+
+  .membership-compare {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .membership-compare-row {
+    min-width: 620px;
+    grid-template-columns: 96px repeat(3, 174px);
+  }
+
   .crop-dialog {
     max-height: calc(100vh - 24px);
   }
@@ -3884,6 +4218,71 @@ button:focus-visible,
   .modal-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .membership-modal .membership-modal-heading {
+    align-items: flex-start;
+    flex-direction: row;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .membership-modal-heading > div {
+    min-width: 0;
+  }
+
+  .membership-modal-heading h2 {
+    font-size: 18px;
+    line-height: 1.2;
+  }
+
+  .membership-modal-heading p {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .membership-modal-heading .icon-button {
+    flex: 0 0 auto;
+    width: 38px;
+    min-width: 38px;
+    min-height: 38px;
+  }
+
+  .membership-modal-plan small {
+    font-size: 10px;
+  }
+
+  .membership-modal-plan span {
+    font-size: 15px;
+  }
+
+  .membership-modal-plan strong {
+    font-size: 22px;
+  }
+
+  .membership-modal-plan p {
+    -webkit-line-clamp: 2;
+  }
+
+  .membership-modal-plan b {
+    padding: 7px 10px;
+  }
+
+  .membership-compare-row > span {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    box-shadow: 1px 0 0 var(--line-soft);
+  }
+
+  .membership-compare-row > span,
+  .membership-compare-row > strong {
+    padding: 10px 11px;
+    font-size: 12px;
   }
 
   .generator-row {

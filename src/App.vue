@@ -25,7 +25,8 @@ import {
   Upload,
   UserRound,
   Users,
-  Wand2
+  Wand2,
+  X
 } from 'lucide-vue-next';
 import { createBaziChart } from '@/bazi/engine';
 import { BIRTH_LOCATIONS, findBirthLocationById, getBirthLocationLabel, type BirthLocation } from '@/bazi/locations';
@@ -75,6 +76,13 @@ import {
 type Panel = 'reading' | 'settings' | 'admin';
 type CropField = 'avatarFile' | 'backgroundFile' | 'mobileBackgroundFile';
 type MobileTab = 'home' | 'chart' | 'reading' | 'mine';
+type PaidFortuneTask = 'structured_report' | 'multi_school' | 'daily';
+type MembershipPlanId = 'monthly' | 'yearly' | 'pro';
+type CommercialAction = {
+  task: FortuneTask;
+  question?: string;
+  mobile?: boolean;
+};
 type MarkdownInline = {
   type: 'text' | 'strong' | 'em' | 'code';
   text: string;
@@ -102,6 +110,84 @@ const ELEMENT_VISUALS = {
   金: { color: '#d97706', soft: '#ffedd5', tint: '#fff7ed' },
   水: { color: '#2563eb', soft: '#dbeafe', tint: '#eff6ff' }
 } satisfies Record<FiveElement, { color: string; soft: string; tint: string }>;
+const commercialStateKey = 'bazi-commercial-state.v1';
+const freeFollowUpLimit = 2;
+const productCatalog: Record<PaidFortuneTask, { title: string; price: string; memberFree?: boolean; description: string }> = {
+  structured_report: {
+    title: '专业报告',
+    price: '¥9.9',
+    description: '完整命局、事业财运、婚恋关系、大运流年和行动清单'
+  },
+  multi_school: {
+    title: '流派会诊',
+    price: '¥19.9',
+    description: '传统子平、调候、盲派倾向、心理现实派四席共审'
+  },
+  daily: {
+    title: '每日运势',
+    price: '¥1.9',
+    memberFree: true,
+    description: '今日事业财运、关系沟通、健康作息和行动建议'
+  }
+};
+const membershipPlans = [
+  {
+    id: 'monthly',
+    title: '月卡',
+    price: '¥19.9',
+    period: '30 天',
+    badge: '轻量体验',
+    description: '适合短期集中咨询，解锁连续追问与每日运势。',
+    features: ['连续追问不限 30 天', '每日运势会员免费', '适合单次阶段咨询'],
+    months: 1
+  },
+  {
+    id: 'yearly',
+    title: '年卡',
+    price: '¥99',
+    period: '365 天',
+    badge: '推荐',
+    description: '适合长期跟踪流年、大运和关系事业变化。',
+    features: ['全年连续追问', '每日运势全年免费', '后续报告权益优先承接'],
+    months: 12
+  },
+  {
+    id: 'pro',
+    title: 'Pro',
+    price: '¥199',
+    period: '365 天',
+    badge: '高阶',
+    description: '面向深度用户，预留多命盘、报告折扣和高级权益。',
+    features: ['包含年卡全部权益', '多命盘权益预留', '专业报告折扣预留'],
+    months: 12
+  }
+] satisfies Array<{
+  id: MembershipPlanId;
+  title: string;
+  price: string;
+  period: string;
+  badge: string;
+  description: string;
+  features: string[];
+  months: number;
+}>;
+const membershipComparisonRows = [
+  { label: '连续追问', monthly: '不限 30 天', yearly: '全年不限', pro: '全年不限' },
+  { label: '每日运势', monthly: '会员免费', yearly: '全年免费', pro: '全年免费' },
+  { label: '命盘管理', monthly: '当前命盘', yearly: '多命盘预留', pro: '多命盘优先' },
+  { label: '报告权益', monthly: '原价购买', yearly: '折扣预留', pro: '高阶折扣预留' },
+  { label: '适合人群', monthly: '短期咨询', yearly: '长期跟踪', pro: '深度使用' }
+];
+const membershipProduct = {
+  title: '大师会员',
+  price: membershipPlans[0].price,
+  description: '解锁连续追问，每日运势免费，后续可承接报告折扣与多命盘权益'
+};
+const dailyLotProduct = {
+  title: '今日抽签',
+  price: '每日免费 1 次',
+  description: '轻仪式感互动，用于每日复访和情绪安顿'
+};
 const appVersion = __APP_VERSION__;
 const locale = ref<Locale>('zh-CN');
 
@@ -130,6 +216,19 @@ const streaming = ref(false);
 const drawingLot = ref(false);
 const followQuestion = ref('');
 const answerBoxRef = ref<HTMLDivElement | null>(null);
+const commercialState = reactive({
+  memberUntil: '',
+  memberPlan: '' as MembershipPlanId | '',
+  purchases: {} as Record<string, string>,
+  followUps: {} as Record<string, number>,
+  dailyLots: {} as Record<string, string>
+});
+const purchaseDialog = reactive({
+  open: false,
+  task: null as PaidFortuneTask | 'membership' | 'follow_up' | null,
+  action: null as CommercialAction | null,
+  plan: 'monthly' as MembershipPlanId
+});
 const factDraft = ref('');
 const eventYearDraft = ref(new Date().getFullYear());
 const eventTitleDraft = ref('');
@@ -140,6 +239,7 @@ const openingAnimationEntering = ref(false);
 const masterModalOpen = ref(false);
 const profileModalOpen = ref(false);
 const historyModalOpen = ref(false);
+const membershipModalOpen = ref(false);
 const birthModalOpen = ref(false);
 const birthProfiles = ref<BirthProfile[]>([]);
 const editingBirthProfileId = ref('');
@@ -269,6 +369,13 @@ const historyMessages = computed(() => roleHistory.value?.messages ?? []);
 const activeBirthProfile = computed(
   () => birthProfiles.value.find((profile) => profile.id === sharedProfile.value?.activeBirthProfileId) ?? null
 );
+const commercialScopeId = computed(() => activeBirthProfile.value?.id ?? (chart.value ? 'current-chart' : 'no-chart'));
+const isMember = computed(() => Boolean(commercialState.memberUntil && new Date(commercialState.memberUntil).getTime() > Date.now()));
+const activeMembershipPlan = computed(() => (isMember.value && isMembershipPlanId(commercialState.memberPlan) ? getMembershipPlan(commercialState.memberPlan) : null));
+const followUpsUsed = computed(() => commercialState.followUps[commercialScopeId.value] ?? 0);
+const followUpsRemaining = computed(() => Math.max(0, freeFollowUpLimit - followUpsUsed.value));
+const commercialTodayKey = computed(() => new Date().toISOString().slice(0, 10));
+const dailyLotUsedToday = computed(() => commercialState.dailyLots[commercialScopeId.value] === commercialTodayKey.value);
 const birthTriggerLabel = computed(() => activeBirthProfile.value?.name ?? t(chart.value ? 'home.currentChart' : 'nav.birthProfile'));
 const adminEditingPersona = computed(() => adminPersonas.value.find((persona) => persona.id === adminForm.id) ?? null);
 const adminEditingBuiltin = computed(() => Boolean(adminEditingPersona.value?.builtin));
@@ -669,6 +776,173 @@ function setMessage(message: string) {
   window.setTimeout(() => {
     if (appMessage.value === message) appMessage.value = '';
   }, 4000);
+}
+
+function isMembershipPlanId(value: unknown): value is MembershipPlanId {
+  return typeof value === 'string' && membershipPlans.some((plan) => plan.id === value);
+}
+
+function getMembershipPlan(planId: MembershipPlanId) {
+  return membershipPlans.find((plan) => plan.id === planId) ?? membershipPlans[0];
+}
+
+function loadCommercialState() {
+  try {
+    const raw = window.localStorage.getItem(commercialStateKey);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Partial<typeof commercialState>;
+    commercialState.memberUntil = typeof parsed.memberUntil === 'string' ? parsed.memberUntil : '';
+    commercialState.memberPlan = isMembershipPlanId(parsed.memberPlan) ? parsed.memberPlan : '';
+    commercialState.purchases = parsed.purchases && typeof parsed.purchases === 'object' ? { ...parsed.purchases } : {};
+    commercialState.followUps = parsed.followUps && typeof parsed.followUps === 'object' ? { ...parsed.followUps } : {};
+    commercialState.dailyLots = parsed.dailyLots && typeof parsed.dailyLots === 'object' ? { ...parsed.dailyLots } : {};
+  } catch {
+    window.localStorage.removeItem(commercialStateKey);
+  }
+}
+
+function saveCommercialState() {
+  window.localStorage.setItem(
+    commercialStateKey,
+    JSON.stringify({
+      memberUntil: commercialState.memberUntil,
+      memberPlan: commercialState.memberPlan,
+      purchases: commercialState.purchases,
+      followUps: commercialState.followUps,
+      dailyLots: commercialState.dailyLots
+    })
+  );
+}
+
+function purchaseKey(task: PaidFortuneTask) {
+  const suffix = task === 'daily' ? commercialTodayKey.value : 'lifetime';
+  return `${commercialScopeId.value}:${task}:${suffix}`;
+}
+
+function hasPurchased(task: PaidFortuneTask) {
+  return Boolean(commercialState.purchases[purchaseKey(task)]);
+}
+
+function productPriceLabel(task: FortuneTask) {
+  if (task === 'bazi_full') return '免费';
+  if (task === 'daily_lot') return dailyLotProduct.price;
+  if (task === 'follow_up') return isMember.value ? '会员可用' : `免费 ${followUpsRemaining.value}/${freeFollowUpLimit}`;
+  const product = productCatalog[task as PaidFortuneTask];
+  if (!product) return '';
+  if (task === 'daily' && isMember.value) return '会员免费';
+  return product.price;
+}
+
+function productAccessLabel(task: FortuneTask) {
+  if (task === 'bazi_full') return '免费体验';
+  if (task === 'daily_lot') return dailyLotUsedToday.value ? '今日已抽' : '每日免费';
+  if (task === 'follow_up') return isMember.value ? '会员连续追问' : `剩余 ${followUpsRemaining.value} 次`;
+  if (task === 'daily' && isMember.value) return '会员已解锁';
+  if ((task === 'structured_report' || task === 'multi_school' || task === 'daily') && hasPurchased(task)) return '已解锁';
+  return productPriceLabel(task);
+}
+
+function openPurchaseDialog(task: PaidFortuneTask | 'membership' | 'follow_up', action: CommercialAction | null = null, plan: MembershipPlanId = 'monthly') {
+  purchaseDialog.task = task;
+  purchaseDialog.action = action;
+  purchaseDialog.plan = plan;
+  purchaseDialog.open = true;
+}
+
+function closePurchaseDialog() {
+  purchaseDialog.open = false;
+  purchaseDialog.task = null;
+  purchaseDialog.action = null;
+  purchaseDialog.plan = 'monthly';
+}
+
+function startMembershipPurchase(planId: MembershipPlanId) {
+  membershipModalOpen.value = false;
+  openPurchaseDialog('membership', null, planId);
+}
+
+function purchaseDialogTitle() {
+  if (purchaseDialog.task === 'membership' || purchaseDialog.task === 'follow_up') return `${membershipProduct.title}${getMembershipPlan(purchaseDialog.plan).title}`;
+  return purchaseDialog.task ? productCatalog[purchaseDialog.task].title : '';
+}
+
+function purchaseDialogPrice() {
+  if (purchaseDialog.task === 'membership' || purchaseDialog.task === 'follow_up') return getMembershipPlan(purchaseDialog.plan).price;
+  return purchaseDialog.task ? productCatalog[purchaseDialog.task].price : '';
+}
+
+function purchaseDialogDescription() {
+  if (purchaseDialog.task === 'membership' || purchaseDialog.task === 'follow_up') return getMembershipPlan(purchaseDialog.plan).description;
+  return purchaseDialog.task ? productCatalog[purchaseDialog.task].description : '';
+}
+
+function grantMembership(planId: MembershipPlanId = 'monthly') {
+  const plan = getMembershipPlan(planId);
+  const nextDate = new Date();
+  nextDate.setMonth(nextDate.getMonth() + plan.months);
+  commercialState.memberUntil = nextDate.toISOString();
+  commercialState.memberPlan = plan.id;
+  saveCommercialState();
+  setMessage(`已模拟开通大师会员${plan.title}，有效期 ${plan.period}`);
+}
+
+function grantPurchase(task: PaidFortuneTask) {
+  commercialState.purchases[purchaseKey(task)] = new Date().toISOString();
+  saveCommercialState();
+  setMessage(`${productCatalog[task].title}已模拟解锁`);
+}
+
+function ensureCommercialAccess(action: CommercialAction) {
+  const { task } = action;
+  if (task === 'bazi_full') return true;
+  if (task === 'daily_lot') {
+    if (!dailyLotUsedToday.value) return true;
+    setMessage('今日抽签已使用，明天再来抽一支');
+    return false;
+  }
+  if (task === 'follow_up') {
+    if (isMember.value || followUpsRemaining.value > 0) return true;
+    openPurchaseDialog('follow_up', action);
+    return false;
+  }
+  if (task === 'daily' && isMember.value) return true;
+  if (task === 'structured_report' || task === 'multi_school' || task === 'daily') {
+    if (hasPurchased(task)) return true;
+    openPurchaseDialog(task, action);
+    return false;
+  }
+  return true;
+}
+
+async function confirmPurchaseDialog() {
+  const task = purchaseDialog.task;
+  const action = purchaseDialog.action;
+  const plan = purchaseDialog.plan;
+  if (!task) return;
+  if (task === 'membership' || task === 'follow_up') {
+    grantMembership(plan);
+  } else {
+    grantPurchase(task);
+  }
+  closePurchaseDialog();
+  if (action) {
+    if (action.mobile) {
+      await requestMobileReading(action.task, action.question);
+    } else {
+      await requestReading(action.task, action.question);
+    }
+  }
+}
+
+function registerCommercialUsage(task: FortuneTask) {
+  if (task === 'follow_up' && !isMember.value) {
+    commercialState.followUps[commercialScopeId.value] = (commercialState.followUps[commercialScopeId.value] ?? 0) + 1;
+    saveCommercialState();
+  }
+  if (task === 'daily_lot') {
+    commercialState.dailyLots[commercialScopeId.value] = commercialTodayKey.value;
+    saveCommercialState();
+  }
 }
 
 function formatMessageTime(message: ChatMessage) {
@@ -1433,6 +1707,9 @@ async function requestReading(task: FortuneTask, question?: string) {
   if (task === 'follow_up' && !question?.trim()) {
     return;
   }
+  if (!ensureCommercialAccess({ task, question })) {
+    return;
+  }
   const credentialError = validateCredentials(credentialsDraft);
   if (credentialError) {
     activePanel.value = 'settings';
@@ -1472,6 +1749,7 @@ async function requestReading(task: FortuneTask, question?: string) {
       role: 'assistant',
       content: fullText
     });
+    registerCommercialUsage(task);
     readingText.value = '';
     await scrollAnswerToBottom();
   } catch (error: any) {
@@ -1483,6 +1761,7 @@ async function requestReading(task: FortuneTask, question?: string) {
 
 async function requestDailyLot() {
   if (drawingLot.value || streaming.value) return;
+  if (!ensureCommercialAccess({ task: 'daily_lot' })) return;
   drawingLot.value = true;
   const animationMs = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 220 : 860;
   window.setTimeout(() => {
@@ -1835,6 +2114,7 @@ async function removePersona(persona: PersonaSkin) {
 
 onMounted(async () => {
   locale.value = normalizeLocale(window.localStorage.getItem(localeStorageKey) ?? navigator.language);
+  loadCommercialState();
   loadRememberedAdminSession();
   document.documentElement.lang = locale.value;
   startOpeningAnimation();
@@ -1929,6 +2209,11 @@ onBeforeUnmount(() => {
         <button class="text-trigger" type="button" :title="t('nav.history')" @click="openHistoryModal">
           <MessageCircle :size="18" aria-hidden="true" />
           <span>{{ t('nav.history') }} {{ historyMessages.length }}</span>
+        </button>
+        <button class="text-trigger membership-top-trigger" type="button" title="大师会员" @click="membershipModalOpen = true">
+          <Lock :size="18" aria-hidden="true" />
+          <span>大师会员</span>
+          <small>{{ isMember ? activeMembershipPlan?.title ?? '已开通' : '月卡 / 年卡 / Pro' }}</small>
         </button>
         <button class="birth-trigger" type="button" :title="t('nav.birthProfile')" @click="openBirthModal">
           <CalendarDays :size="18" aria-hidden="true" />
@@ -2376,6 +2661,88 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
+    <div v-if="purchaseDialog.open" class="modal-backdrop" role="presentation" @click.self="closePurchaseDialog">
+      <section class="purchase-modal" role="dialog" aria-modal="true" aria-label="权益确认">
+        <header class="modal-heading">
+          <div>
+            <span class="eyebrow">权益确认</span>
+            <h2>{{ purchaseDialogTitle() }}</h2>
+          </div>
+          <button class="icon-button" type="button" aria-label="关闭" @click="closePurchaseDialog">
+            <X :size="18" aria-hidden="true" />
+          </button>
+        </header>
+        <div class="purchase-price-row">
+          <strong>{{ purchaseDialogPrice() }}</strong>
+          <span>{{ purchaseDialog.task === 'follow_up' ? '免费次数已用完' : purchaseDialog.task === 'membership' ? getMembershipPlan(purchaseDialog.plan).period : '一次性服务' }}</span>
+        </div>
+        <p>{{ purchaseDialogDescription() }}</p>
+        <ul class="purchase-benefits">
+          <li v-for="feature in purchaseDialog.task === 'membership' || purchaseDialog.task === 'follow_up' ? getMembershipPlan(purchaseDialog.plan).features : []" :key="feature">{{ feature }}</li>
+          <li v-if="purchaseDialog.task === 'structured_report'">生成可导出的完整专业报告</li>
+          <li v-if="purchaseDialog.task === 'multi_school'">获得四派会诊与最终取舍建议</li>
+          <li v-if="purchaseDialog.task === 'daily'">解锁今日运势，本命盘当天有效</li>
+        </ul>
+        <footer class="purchase-actions">
+          <button class="secondary-button" type="button" @click="closePurchaseDialog">稍后再说</button>
+          <button class="primary-button" type="button" @click="confirmPurchaseDialog">
+            <Check :size="18" aria-hidden="true" />
+            模拟解锁
+          </button>
+        </footer>
+      </section>
+    </div>
+
+    <div v-if="membershipModalOpen" class="modal-backdrop" role="presentation" @click.self="membershipModalOpen = false">
+      <section class="membership-modal" role="dialog" aria-modal="true" aria-label="大师会员">
+        <header class="modal-heading membership-modal-heading">
+          <div>
+            <span class="eyebrow">大师会员</span>
+            <h2>选择适合你的命理解读权益</h2>
+            <p>会员用于连续追问、每日运势和后续高级报告权益承接，先用清晰档位帮助用户理解价值。</p>
+          </div>
+          <button class="icon-button" type="button" aria-label="关闭" @click="membershipModalOpen = false">
+            <X :size="18" aria-hidden="true" />
+          </button>
+        </header>
+
+        <div class="membership-modal-body">
+          <div class="membership-plan-grid membership-modal-plans">
+            <button
+              v-for="plan in membershipPlans"
+              :key="plan.id"
+              class="membership-plan-card membership-modal-plan"
+              :class="{ recommended: plan.id === 'yearly', active: activeMembershipPlan?.id === plan.id }"
+              type="button"
+              @click="startMembershipPurchase(plan.id)"
+            >
+              <small>{{ plan.badge }}</small>
+              <span>{{ plan.title }}</span>
+              <strong>{{ plan.price }}</strong>
+              <em>{{ plan.period }}</em>
+              <p>{{ plan.description }}</p>
+              <b>{{ activeMembershipPlan?.id === plan.id ? '当前权益' : '选择此档' }}</b>
+            </button>
+          </div>
+
+          <section class="membership-compare" aria-label="会员权益横向对比">
+            <div class="membership-compare-row membership-compare-head">
+              <span>权益</span>
+              <strong>月卡</strong>
+              <strong>年卡</strong>
+              <strong>Pro</strong>
+            </div>
+            <div v-for="row in membershipComparisonRows" :key="row.label" class="membership-compare-row">
+              <span>{{ row.label }}</span>
+              <strong>{{ row.monthly }}</strong>
+              <strong>{{ row.yearly }}</strong>
+              <strong>{{ row.pro }}</strong>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+
     <section v-if="activePanel === 'reading' && mobileTab === 'home'" class="mobile-screen mobile-home-view" aria-label="移动端首页">
       <section class="mobile-hero-card">
         <div>
@@ -2439,25 +2806,30 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div class="mobile-quick-grid">
-          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('structured_report')">
-            <FileText :size="17" aria-hidden="true" />
-            {{ t('home.professionalReport') }}
-          </button>
-          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('multi_school')">
-            <Users :size="17" aria-hidden="true" />
-            {{ t('home.multiSchool') }}
-          </button>
-          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('bazi_full')">
+          <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('bazi_full')">
             <Wand2 :size="17" aria-hidden="true" />
-            {{ t('home.fullReading') }}
+            <span>{{ t('home.fullReading') }}</span>
+            <small>{{ productAccessLabel('bazi_full') }}</small>
           </button>
-          <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('daily')">
+          <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('structured_report')">
+            <FileText :size="17" aria-hidden="true" />
+            <span>{{ t('home.professionalReport') }}</span>
+            <small>{{ productAccessLabel('structured_report') }}</small>
+          </button>
+          <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('multi_school')">
+            <Users :size="17" aria-hidden="true" />
+            <span>{{ t('home.multiSchool') }}</span>
+            <small>{{ productAccessLabel('multi_school') }}</small>
+          </button>
+          <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming" @click="requestMobileReading('daily')">
             <CalendarDays :size="17" aria-hidden="true" />
-            {{ t('home.dailyFortune') }}
+            <span>{{ t('home.dailyFortune') }}</span>
+            <small>{{ productAccessLabel('daily') }}</small>
           </button>
-          <button class="secondary-button" type="button" :disabled="!chart || streaming || drawingLot" @click="requestMobileDailyLot">
+          <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming || drawingLot || dailyLotUsedToday" @click="requestMobileDailyLot">
             <Sparkles :size="17" aria-hidden="true" />
-            {{ t('home.dailyLot') }}
+            <span>{{ t('home.dailyLot') }}</span>
+            <small>{{ productAccessLabel('daily_lot') }}</small>
           </button>
         </div>
         <div class="mobile-follow-card">
@@ -2481,19 +2853,14 @@ onBeforeUnmount(() => {
             <Send :size="18" aria-hidden="true" />
           </button>
         </div>
+        <p class="commercial-hint">{{ productAccessLabel('follow_up') }} · 超出后开通{{ membershipProduct.title }}</p>
         <p class="note-line">{{ t('home.readingHint') }}</p>
       </section>
 
     </section>
 
     <section v-if="activePanel === 'reading' && mobileTab === 'mine'" class="mobile-screen mobile-mine-view" aria-label="移动端我的">
-      <section class="mobile-card">
-        <div class="mobile-card-head">
-          <div>
-            <span class="mobile-eyebrow">{{ t('nav.mine') }}</span>
-            <h2>{{ t('mine.management') }}</h2>
-          </div>
-        </div>
+      <section class="mobile-card mobile-mine-card">
         <div class="mobile-menu-list">
           <button class="mobile-menu-item" type="button" @click="masterModalOpen = true">
             <UserRound :size="18" aria-hidden="true" />
@@ -2514,6 +2881,11 @@ onBeforeUnmount(() => {
             <MessageCircle :size="18" aria-hidden="true" />
             <span>{{ t('nav.history') }}</span>
             <small>{{ t('common.items', { count: historyMessages.length }) }}</small>
+          </button>
+          <button class="mobile-menu-item" type="button" @click="membershipModalOpen = true">
+            <Lock :size="18" aria-hidden="true" />
+            <span>大师会员</span>
+            <small>{{ isMember ? `已开通 ${activeMembershipPlan?.title ?? '会员'}` : '月卡 / 年卡 / Pro' }}</small>
           </button>
           <button class="mobile-menu-item" type="button" @click="openSettings">
             <KeyRound :size="18" aria-hidden="true" />
@@ -2697,32 +3069,37 @@ onBeforeUnmount(() => {
               </div>
             </section>
             <p v-for="note in chart.notes" :key="note" class="note-line">{{ note }}</p>
-            <div class="actions-row">
-              <button class="primary-button" type="button" :disabled="streaming" @click="requestReading('structured_report')">
-                <FileText :size="18" aria-hidden="true" />
-                {{ t('home.professionalReport') }}
-              </button>
-              <button class="secondary-button" type="button" :disabled="streaming" @click="requestReading('multi_school')">
-                <Users :size="18" aria-hidden="true" />
-                {{ t('home.multiSchool') }}
-              </button>
-              <button class="primary-button" type="button" :disabled="streaming" @click="requestReading('bazi_full')">
+            <div class="actions-row chart-service-actions">
+              <button class="primary-button commercial-action-button chart-overview-action" type="button" :disabled="streaming" @click="requestReading('bazi_full')">
                 <Wand2 :size="18" aria-hidden="true" />
-                {{ t('home.fullReading') }}
+                <span>{{ t('home.fullReading') }}</span>
+                <small>{{ productAccessLabel('bazi_full') }}</small>
               </button>
-              <button class="secondary-button" type="button" :disabled="streaming" @click="requestReading('daily')">
+              <button class="primary-button commercial-action-button" type="button" :disabled="streaming" @click="requestReading('structured_report')">
+                <FileText :size="18" aria-hidden="true" />
+                <span>{{ t('home.professionalReport') }}</span>
+                <small>{{ productAccessLabel('structured_report') }}</small>
+              </button>
+              <button class="secondary-button commercial-action-button" type="button" :disabled="streaming" @click="requestReading('multi_school')">
+                <Users :size="18" aria-hidden="true" />
+                <span>{{ t('home.multiSchool') }}</span>
+                <small>{{ productAccessLabel('multi_school') }}</small>
+              </button>
+              <button class="secondary-button commercial-action-button" type="button" :disabled="streaming" @click="requestReading('daily')">
                 <CalendarDays :size="18" aria-hidden="true" />
-                {{ t('home.dailyFortune') }}
+                <span>{{ t('home.dailyFortune') }}</span>
+                <small>{{ productAccessLabel('daily') }}</small>
               </button>
               <button
-                class="secondary-button lot-button"
+                class="secondary-button lot-button commercial-action-button"
                 type="button"
                 :class="{ drawing: drawingLot }"
-                :disabled="streaming || drawingLot"
+                :disabled="streaming || drawingLot || dailyLotUsedToday"
                 @click="requestDailyLot"
               >
                 <Sparkles :size="18" aria-hidden="true" />
-                {{ t('home.dailyLot') }}
+                <span>{{ t('home.dailyLot') }}</span>
+                <small>{{ productAccessLabel('daily_lot') }}</small>
               </button>
             </div>
           </div>
@@ -2751,25 +3128,30 @@ onBeforeUnmount(() => {
             </button>
           </div>
           <div class="mobile-reading-prompts reading-prompt-strip" aria-label="快捷解读问题">
-            <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('structured_report')">
-              <FileText :size="16" aria-hidden="true" />
-              {{ t('home.professionalReport') }}
-            </button>
-            <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('multi_school')">
-              <Users :size="16" aria-hidden="true" />
-              {{ t('home.multiSchool') }}
-            </button>
-            <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('bazi_full')">
+            <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming" @click="requestReading('bazi_full')">
               <Wand2 :size="16" aria-hidden="true" />
-              {{ t('home.fullReading') }}
+              <span>{{ t('home.fullReading') }}</span>
+              <small>{{ productAccessLabel('bazi_full') }}</small>
             </button>
-            <button class="secondary-button" type="button" :disabled="!chart || streaming" @click="requestReading('daily')">
+            <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming" @click="requestReading('structured_report')">
+              <FileText :size="16" aria-hidden="true" />
+              <span>{{ t('home.professionalReport') }}</span>
+              <small>{{ productAccessLabel('structured_report') }}</small>
+            </button>
+            <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming" @click="requestReading('multi_school')">
+              <Users :size="16" aria-hidden="true" />
+              <span>{{ t('home.multiSchool') }}</span>
+              <small>{{ productAccessLabel('multi_school') }}</small>
+            </button>
+            <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming" @click="requestReading('daily')">
               <CalendarDays :size="16" aria-hidden="true" />
-              {{ t('home.dailyFortune') }}
+              <span>{{ t('home.dailyFortune') }}</span>
+              <small>{{ productAccessLabel('daily') }}</small>
             </button>
-            <button class="secondary-button" type="button" :disabled="!chart || streaming || drawingLot" @click="requestDailyLot">
+            <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming || drawingLot || dailyLotUsedToday" @click="requestDailyLot">
               <Sparkles :size="16" aria-hidden="true" />
-              {{ t('home.dailyLot') }}
+              <span>{{ t('home.dailyLot') }}</span>
+              <small>{{ productAccessLabel('daily_lot') }}</small>
             </button>
           </div>
           <div ref="answerBoxRef" class="answer-box chat-timeline">
@@ -2822,6 +3204,7 @@ onBeforeUnmount(() => {
                 <Send :size="18" aria-hidden="true" />
               </button>
             </div>
+            <p class="commercial-hint">{{ productAccessLabel('follow_up') }} · 会员解锁连续追问</p>
           </div>
         </section>
       </section>
