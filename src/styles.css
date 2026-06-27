@@ -2953,6 +2953,22 @@ button:focus-visible,
   gap: 12px;
 }
 
+.report-export-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-export-hint {
+  flex: 0 0 auto;
+  max-width: 180px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: right;
+}
+
 .reading-guide-card {
   display: flex;
   min-width: 0;
@@ -4078,6 +4094,14 @@ button:focus-visible,
 
   .reading-chat-header {
     gap: 8px;
+  }
+
+  .report-export-actions {
+    gap: 6px;
+  }
+
+  .report-export-hint {
+    display: none;
   }
 
   .reading-guide-card img,

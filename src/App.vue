@@ -77,6 +77,7 @@ type Panel = 'reading' | 'settings' | 'admin';
 type CropField = 'avatarFile' | 'backgroundFile' | 'mobileBackgroundFile';
 type MobileTab = 'home' | 'chart' | 'reading' | 'mine';
 type PaidFortuneTask = 'structured_report' | 'multi_school' | 'daily';
+type ReportExportTask = Extract<FortuneTask, 'structured_report' | 'multi_school'>;
 type MembershipPlanId = 'monthly' | 'yearly' | 'pro';
 type CommercialAction = {
   task: FortuneTask;
@@ -444,7 +445,7 @@ const trueSolarPreview = computed(() => {
   const position = Number.isFinite(latitude) ? `北纬${formatCoordinate(latitude)} 东经${formatCoordinate(longitude)}` : `东经${formatCoordinate(longitude)}`;
   return `${position}，真太阳时 ${formatCivilDateTime(corrected).slice(0, 16)}，校正 ${formatSignedMinutes(correction.totalCorrectionMinutes)}`;
 });
-const activeReadingBlocks = computed(() => parseMarkdown(readingText.value));
+const activeReadingBlocks = computed(() => parseMarkdown(cleanVisibleReportContent(readingText.value)));
 const selectedPersonaEngine = computed(() => (selectedPersona.value ? engineById(selectedPersona.value.engineId) : undefined));
 const pillarRows = computed(() => {
   if (!chart.value) return [];
@@ -541,6 +542,11 @@ const mobileChartHighlights = computed(() => {
     { label: '关系', value: `${chartRelationRows.value.length}项` }
   ];
 });
+const latestAssistantMessage = computed(() => [...historyMessages.value].reverse().find((message) => message.role === 'assistant') ?? null);
+const latestExportableReport = computed(() => {
+  const message = latestAssistantMessage.value;
+  return message && isExportableReportMessage(message) ? message : null;
+});
 const hasCredentials = computed(() => Boolean(credentialsDraft.baseUrl && credentialsDraft.apiKey && credentialsDraft.model));
 const modelSelectOptions = computed(() => {
   const options = [...modelOptions.value];
@@ -561,6 +567,12 @@ async function requestMobileReading(task: FortuneTask, question?: string) {
   showMobileTab('reading');
   await nextTick();
   await requestReading(task, question);
+}
+
+async function requestChartOverview() {
+  showMobileTab('reading');
+  await nextTick();
+  await requestReading('bazi_full');
 }
 
 function handleFollowQuestionKeydown(event: KeyboardEvent, mobile = false) {
@@ -1558,46 +1570,911 @@ async function deleteLifeEvent(eventId: string) {
 
 function latestAssistantReading() {
   return (
-    readingText.value ||
-    [...historyMessages.value]
-      .reverse()
-      .find((message) => message.role === 'assistant')
-      ?.content ||
+    cleanVisibleReportContent(readingText.value || latestAssistantMessage.value?.content || '') ||
     ''
   );
+}
+
+function cleanVisibleReportContent(content: string) {
+  return content
+    .replace(/[ \t]*【依据：[^】]*】/g, '')
+    .replace(/[ \t]*\[依据：[^\]]*\]/g, '')
+    .replace(/[ \t]*（依据：[^）]*）/g, '')
+    .replace(/[ \t]*\(依据：[^)]*\)/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function reportTaskTitle(task: FortuneTask | string | undefined) {
+  if (task === 'structured_report') return productCatalog.structured_report.title;
+  if (task === 'multi_school') return productCatalog.multi_school.title;
+  if (task === 'bazi_full') return t('home.fullReading');
+  if (task === 'daily') return t('home.dailyFortune');
+  if (task === 'daily_lot') return t('home.dailyLot');
+  return '命理解读';
+}
+
+function isReportExportTask(task: FortuneTask | string | undefined): task is ReportExportTask {
+  return task === 'structured_report' || task === 'multi_school';
+}
+
+function isExportableReportMessage(message: ChatMessage) {
+  return message.role === 'assistant' && message.metadata?.exportable === true && isReportExportTask(message.metadata.task);
 }
 
 function sanitizeFilename(value: string) {
   return value.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').slice(0, 48) || 'bazi-report';
 }
 
-function exportCurrentReading() {
-  const content = latestAssistantReading();
-  if (!content.trim()) {
-    setMessage('还没有可导出的解读内容');
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderMarkdownInlineHtml(children: MarkdownInline[]) {
+  return children
+    .map((child) => {
+      const text = escapeHtml(child.text);
+      if (child.type === 'strong') return `<strong>${text}</strong>`;
+      if (child.type === 'em') return `<em>${text}</em>`;
+      if (child.type === 'code') return `<code>${text}</code>`;
+      return `<span>${text}</span>`;
+    })
+    .join('');
+}
+
+function renderMarkdownBlocksHtml(blocks: MarkdownBlock[]) {
+  return blocks
+    .map((block) => {
+      if (block.type === 'heading') return `<h${block.level}>${renderMarkdownInlineHtml(block.children)}</h${block.level}>`;
+      if (block.type === 'blockquote') return `<blockquote>${renderMarkdownInlineHtml(block.children)}</blockquote>`;
+      if (block.type === 'list') {
+        const tag = block.ordered ? 'ol' : 'ul';
+        return `<${tag}>${block.items.map((item) => `<li>${renderMarkdownInlineHtml(item)}</li>`).join('')}</${tag}>`;
+      }
+      if (block.type === 'code') {
+        return `<pre><code>${escapeHtml(block.code)}</code></pre>`;
+      }
+      if (block.type === 'hr') return '<hr />';
+      return `<p>${renderMarkdownInlineHtml(block.children)}</p>`;
+    })
+    .join('\n');
+}
+
+function reportTemplateStyles() {
+  return `
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #171512;
+      background: #ece8df;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.68;
+    }
+    .report-page {
+      width: 1120px;
+      margin: 0 auto;
+      padding: 44px;
+      background:
+        radial-gradient(circle at 82% 0%, rgba(186, 140, 70, 0.16), transparent 30%),
+        linear-gradient(135deg, #fbfaf6 0%, #f2efe7 100%);
+    }
+    .report-sheet {
+      overflow: hidden;
+      border: 1px solid #d4ccbd;
+      border-radius: 22px;
+      background: rgba(255, 253, 248, 0.96);
+      box-shadow: 0 24px 70px rgba(51, 42, 28, 0.16);
+    }
+    .report-cover {
+      position: relative;
+      padding: 44px 48px 38px;
+      color: #fffaf0;
+      background:
+        linear-gradient(135deg, rgba(20, 20, 19, 0.98), rgba(64, 50, 33, 0.94)),
+        radial-gradient(circle at 80% 18%, rgba(236, 197, 102, 0.26), transparent 34%);
+    }
+    .report-cover::after {
+      content: "";
+      position: absolute;
+      right: -72px;
+      bottom: -96px;
+      width: 260px;
+      height: 260px;
+      border: 1px solid rgba(236, 197, 102, 0.28);
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 24px rgba(255, 253, 248, 0.04);
+    }
+    .report-brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 38px;
+      font-size: 13px;
+      letter-spacing: 0;
+      opacity: 0.86;
+    }
+
+    .report-brand > span:first-child {
+      min-width: 0;
+    }
+
+    .report-badge {
+      display: inline-flex;
+      min-width: 112px;
+      height: 32px;
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 12px;
+      border: 1px solid rgba(255, 250, 240, 0.28);
+      border-radius: 999px;
+      background: rgba(255, 250, 240, 0.08);
+      line-height: 1;
+    }
+    .report-cover h1 {
+      max-width: 760px;
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", "Songti SC", "SimSun", serif;
+      font-size: 44px;
+      line-height: 1.1;
+      font-weight: 700;
+    }
+    .report-cover p {
+      max-width: 720px;
+      margin: 16px 0 0;
+      color: rgba(255, 250, 240, 0.76);
+      font-size: 16px;
+    }
+    .report-meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      padding: 22px;
+      border-bottom: 1px solid #ded8cc;
+      background: #f7f4ed;
+    }
+    .report-meta span,
+    .summary-card span {
+      display: block;
+      color: #8b857b;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .report-meta strong,
+    .summary-card strong {
+      display: block;
+      margin-top: 4px;
+      color: #1a1815;
+      font-size: 16px;
+    }
+    .pillar-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      padding: 24px 32px 8px;
+    }
+    .pillar-card,
+    .summary-card {
+      border: 1px solid #ded8cc;
+      border-radius: 14px;
+      background: #fffdf8;
+    }
+    .pillar-card {
+      padding: 14px;
+      text-align: center;
+    }
+    .pillar-card small {
+      display: block;
+      color: #8b857b;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .pillar-ganzhi {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .pillar-char {
+      display: grid;
+      min-height: 62px;
+      place-items: center;
+      padding: 7px 6px;
+      color: var(--element-color);
+      border: 1px solid var(--element-soft);
+      border-radius: 10px;
+      background: var(--element-tint);
+    }
+    .pillar-char b {
+      display: block;
+      font-family: "Iowan Old Style", "Palatino Linotype", "Songti SC", "SimSun", serif;
+      font-size: 34px;
+      line-height: 0.96;
+      letter-spacing: 0;
+    }
+    .pillar-char em {
+      display: block;
+      margin-top: 3px;
+      font-size: 12px;
+      font-style: normal;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      padding: 16px 32px 28px;
+    }
+    .summary-card { padding: 16px; }
+    .report-content {
+      padding: 36px 48px 46px;
+      background: #fffdf8;
+    }
+    .report-content h1,
+    .report-content h2,
+    .report-content h3 {
+      margin: 30px 0 12px;
+      color: #171512;
+      line-height: 1.25;
+    }
+    .report-content h1 { font-size: 28px; }
+    .report-content h2 { font-size: 23px; }
+    .report-content h3 { font-size: 19px; }
+    .report-content p,
+    .report-content li,
+    .report-content blockquote {
+      color: #34312d;
+      font-size: 15px;
+    }
+    .report-content p { margin: 0 0 14px; }
+    .report-content ul,
+    .report-content ol {
+      margin: 8px 0 18px;
+      padding-left: 24px;
+    }
+    .report-content li { margin: 6px 0; }
+    .report-content strong { color: #111; }
+    .report-content blockquote {
+      margin: 18px 0;
+      padding: 14px 18px;
+      border-left: 4px solid #b78949;
+      background: #f7f2e8;
+    }
+    .report-content hr {
+      margin: 28px 0;
+      border: 0;
+      border-top: 1px solid #ded8cc;
+    }
+    .report-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 32px;
+      color: #8b857b;
+      border-top: 1px solid #ded8cc;
+      background: #f7f4ed;
+      font-size: 12px;
+    }
+    @media print {
+      body { background: #fff; }
+      .report-page {
+        width: auto;
+        padding: 0;
+        background: #fff;
+      }
+      .report-sheet {
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+      @page { margin: 12mm; size: A4; }
+    }
+  `;
+}
+
+function reportMetaItems(message: ChatMessage) {
+  return [
+    { label: '报告类型', value: reportTaskTitle(message.metadata?.task) },
+    { label: '命盘档案', value: birthTriggerLabel.value },
+    { label: '解读大师', value: selectedPersona.value?.name ?? t('home.masterFallback') },
+    { label: '生成时间', value: new Date(message.createdAt).toLocaleString('zh-CN', { hour12: false }) }
+  ];
+}
+
+function reportSummaryItems() {
+  if (!chart.value) {
+    return [
+      { label: '日主', value: '未生成命盘' },
+      { label: '当前大运', value: '待定' },
+      { label: '真太阳时', value: '待定' }
+    ];
+  }
+  const trueSolar = chart.value.trueSolarTime.enabled && chart.value.trueSolarTime.correctedTime
+    ? `${formatCivilDateTime(chart.value.trueSolarTime.correctedTime).slice(0, 16)}`
+    : '未启用';
+  return [
+    { label: '日主强弱', value: `${chart.value.dayMaster.gan}${chart.value.dayMaster.element} · ${chart.value.strength?.dayMasterStrength.conclusion ?? '待定'}` },
+    { label: '当前大运', value: currentLuckCycle.value?.ganZhi ?? chart.value.luck.startAgeText },
+    { label: '真太阳时', value: trueSolar }
+  ];
+}
+
+function buildReportBody(message: ChatMessage) {
+  const taskTitle = reportTaskTitle(message.metadata?.task);
+  const title = `${birthTriggerLabel.value} · ${taskTitle}`;
+  const metaHtml = reportMetaItems(message)
+    .map((item) => `<div><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`)
+    .join('');
+  const pillarsHtml = pillarRows.value.length
+    ? pillarRows.value
+        .map((pillar) => {
+          const ganVisual = ELEMENT_VISUALS[pillar.ganElement];
+          const zhiVisual = ELEMENT_VISUALS[pillar.zhiElement];
+          const ganStyle = `--element-color:${ganVisual.color};--element-soft:${ganVisual.soft};--element-tint:${ganVisual.tint};`;
+          const zhiStyle = `--element-color:${zhiVisual.color};--element-soft:${zhiVisual.soft};--element-tint:${zhiVisual.tint};`;
+          return `<div class="pillar-card"><small>${escapeHtml(pillar.label)}</small><div class="pillar-ganzhi"><span class="pillar-char" style="${ganStyle}"><b>${escapeHtml(pillar.gan)}</b><em>${escapeHtml(pillar.ganElement)}</em></span><span class="pillar-char" style="${zhiStyle}"><b>${escapeHtml(pillar.zhi)}</b><em>${escapeHtml(pillar.zhiElement)}</em></span></div></div>`;
+        })
+        .join('')
+    : '<div class="pillar-card"><small>命盘</small><b>待生成</b></div>';
+  const summaryHtml = reportSummaryItems()
+    .map((item) => `<div class="summary-card"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`)
+    .join('');
+  const contentHtml = renderMarkdownBlocksHtml(parseMarkdown(cleanVisibleReportContent(message.content)));
+  const subtitle =
+    message.metadata?.task === 'multi_school'
+      ? '以多流派交叉校验的方式呈现命局判断、分歧取舍与行动建议。'
+      : '围绕命局底盘、事业财运、关系健康与阶段策略形成可阅读、可留存的专业报告。';
+
+  return `
+    <main class="report-page">
+      <article class="report-sheet">
+        <header class="report-cover">
+          <div class="report-brand">
+            <span>八字命理学 · 专业交付报告</span>
+            <span class="report-badge">${escapeHtml(taskTitle)}</span>
+          </div>
+          <h1>${escapeHtml(title)}</h1>
+          <p>${escapeHtml(subtitle)}</p>
+        </header>
+        <section class="report-meta">${metaHtml}</section>
+        <section class="pillar-strip">${pillarsHtml}</section>
+        <section class="summary-grid">${summaryHtml}</section>
+        <section class="report-content">${contentHtml}</section>
+        <footer class="report-footer">
+          <span>本报告由八字命理学工作台生成，仅供命理研究与自我规划参考。</span>
+          <span>${escapeHtml(new Date().toLocaleDateString('zh-CN'))}</span>
+        </footer>
+      </article>
+    </main>
+  `;
+}
+
+function buildReportDocument(message: ChatMessage) {
+  return `<!doctype html>
+    <html lang="zh-CN">
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(`${birthTriggerLabel.value}-${reportTaskTitle(message.metadata?.task)}`)}</title>
+        <style>${reportTemplateStyles()}</style>
+      </head>
+      <body>${buildReportBody(message)}</body>
+    </html>`;
+}
+
+async function exportReportPdf() {
+  const message = latestExportableReport.value;
+  if (!message) {
+    setMessage('请先生成专业报告或流派会诊，命盘速览不支持导出');
     return;
   }
-  const title = `${birthTriggerLabel.value} 命理报告`;
-  const chartSummary = chart.value
-    ? [
-        `- 日主：${chart.value.dayMaster.gan}${chart.value.dayMaster.element}`,
-        `- 四柱：${pillarRows.value.map((pillar) => pillar.ganZhi).join(' ')}`,
-        `- 当前大运：${currentLuckCycle.value?.ganZhi ?? chart.value.luck.startAgeText}`
-      ].join('\n')
-    : '- 尚未生成命盘';
-  const body = [`# ${title}`, `导出时间：${new Date().toLocaleString()}`, '## 命盘摘要', chartSummary, '## 解读正文', content].join(
-    '\n\n'
-  );
-  const blob = new Blob([body], { type: 'text/markdown;charset=utf-8' });
+  try {
+    const reportCanvas = createReportCanvas(message);
+    const pdfBlob = await createPdfFromReportCanvas(reportCanvas);
+    downloadBlob(pdfBlob, `${sanitizeFilename(`${birthTriggerLabel.value}-${reportTaskTitle(message.metadata?.task)}`)}.pdf`);
+    setMessage('PDF 报告已导出');
+  } catch (error: any) {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      setMessage(error?.message ?? 'PDF 生成失败，请稍后重试');
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(buildReportDocument(message));
+    printWindow.document.close();
+    window.setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 350);
+    setMessage('PDF 直接生成失败，已打开打印页作为备用');
+  }
+}
+
+type CanvasTextToken = { text: string; bold?: boolean; italic?: boolean; code?: boolean };
+
+function flattenInlineText(children: MarkdownInline[]): CanvasTextToken[] {
+  return children.map((child) => ({
+    text: child.text,
+    bold: child.type === 'strong',
+    italic: child.type === 'em',
+    code: child.type === 'code'
+  }));
+}
+
+function setCanvasFont(context: CanvasRenderingContext2D, size: number, weight = 400, family = 'Microsoft YaHei, PingFang SC, Arial') {
+  context.font = `${weight} ${size}px ${family}`;
+}
+
+function canvasRoundRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.lineTo(x + width - r, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + r);
+  context.lineTo(x + width, y + height - r);
+  context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  context.lineTo(x + r, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - r);
+  context.lineTo(x, y + r);
+  context.quadraticCurveTo(x, y, x + r, y);
+  context.closePath();
+}
+
+function canvasFillRoundRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number, fill: string) {
+  canvasRoundRect(context, x, y, width, height, radius);
+  context.fillStyle = fill;
+  context.fill();
+}
+
+function canvasStrokeRoundRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number, stroke: string) {
+  canvasRoundRect(context, x, y, width, height, radius);
+  context.strokeStyle = stroke;
+  context.stroke();
+}
+
+function wrapCanvasTokens(context: CanvasRenderingContext2D, tokens: CanvasTextToken[], maxWidth: number, size: number) {
+  const lines: CanvasTextToken[][] = [];
+  let current: CanvasTextToken[] = [];
+  let width = 0;
+  const pushLine = () => {
+    if (current.length) lines.push(current);
+    current = [];
+    width = 0;
+  };
+
+  for (const token of tokens) {
+    const parts = token.text.split(/(\s+)/).flatMap((part) => {
+      if (!part || /\s+/.test(part)) return part ? [part] : [];
+      const chars = Array.from(part);
+      return chars.length > 16 ? chars : [part];
+    });
+    for (const part of parts) {
+      setCanvasFont(context, size, token.bold ? 700 : 400);
+      const partWidth = context.measureText(part).width;
+      if (width > 0 && width + partWidth > maxWidth) pushLine();
+      current.push({ ...token, text: part });
+      width += partWidth;
+    }
+  }
+  pushLine();
+  return lines;
+}
+
+function measureCanvasText(context: CanvasRenderingContext2D, tokens: CanvasTextToken[], maxWidth: number, size: number, lineHeight: number) {
+  return Math.max(lineHeight, wrapCanvasTokens(context, tokens, maxWidth, size).length * lineHeight);
+}
+
+function drawCanvasText(
+  context: CanvasRenderingContext2D,
+  tokens: CanvasTextToken[],
+  x: number,
+  y: number,
+  maxWidth: number,
+  options: { size: number; lineHeight: number; color?: string; weight?: number }
+) {
+  const lines = wrapCanvasTokens(context, tokens, maxWidth, options.size);
+  context.textBaseline = 'top';
+  lines.forEach((line, lineIndex) => {
+    let offsetX = 0;
+    line.forEach((token) => {
+      setCanvasFont(context, options.size, token.bold ? 700 : options.weight ?? 400);
+      context.fillStyle = token.code ? '#7a5222' : options.color ?? '#34312d';
+      context.fillText(token.text, x + offsetX, y + lineIndex * options.lineHeight);
+      offsetX += context.measureText(token.text).width;
+    });
+  });
+  return y + lines.length * options.lineHeight;
+}
+
+function estimateReportImageHeight(context: CanvasRenderingContext2D, message: ChatMessage, contentWidth: number) {
+  let height = 44 + 230 + 92 + 138 + 104 + 76;
+  for (const block of parseMarkdown(cleanVisibleReportContent(message.content))) {
+    if (block.type === 'heading') {
+      const size = block.level <= 2 ? 25 : 20;
+      height += 22 + measureCanvasText(context, flattenInlineText(block.children), contentWidth, size, Math.round(size * 1.35));
+    } else if (block.type === 'list') {
+      for (const item of block.items) {
+        height += measureCanvasText(context, flattenInlineText(item), contentWidth - 28, 16, 28) + 4;
+      }
+      height += 8;
+    } else if (block.type === 'blockquote') {
+      height += measureCanvasText(context, flattenInlineText(block.children), contentWidth - 34, 16, 28) + 28;
+    } else if (block.type === 'code') {
+      height += measureCanvasText(context, [{ text: block.code }], contentWidth - 28, 14, 24) + 24;
+    } else if (block.type === 'hr') {
+      height += 28;
+    } else {
+      height += measureCanvasText(context, flattenInlineText(block.children), contentWidth, 16, 29) + 10;
+    }
+  }
+  return Math.ceil(height + 80);
+}
+
+function drawCanvasReport(context: CanvasRenderingContext2D, message: ChatMessage, width: number, height: number) {
+  const pageX = 44;
+  const sheetX = 44;
+  const sheetY = 44;
+  const sheetWidth = width - 88;
+  const contentX = sheetX + 48;
+  const contentWidth = sheetWidth - 96;
+  const taskTitle = reportTaskTitle(message.metadata?.task);
+  const title = `${birthTriggerLabel.value} · ${taskTitle}`;
+  const subtitle =
+    message.metadata?.task === 'multi_school'
+      ? '以多流派交叉校验的方式呈现命局判断、分歧取舍与行动建议。'
+      : '围绕命局底盘、事业财运、关系健康与阶段策略形成可阅读、可留存的专业报告。';
+
+  context.fillStyle = '#ece8df';
+  context.fillRect(0, 0, width, height);
+  const bg = context.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, '#fbfaf6');
+  bg.addColorStop(1, '#f2efe7');
+  context.fillStyle = bg;
+  context.fillRect(pageX, pageX, width - pageX * 2, height - pageX * 2);
+
+  canvasFillRoundRect(context, sheetX, sheetY, sheetWidth, height - 88, 22, '#fffdf8');
+  canvasStrokeRoundRect(context, sheetX, sheetY, sheetWidth, height - 88, 22, '#d4ccbd');
+
+  const coverHeight = 230;
+  const coverGradient = context.createLinearGradient(sheetX, sheetY, sheetX + sheetWidth, sheetY + coverHeight);
+  coverGradient.addColorStop(0, '#141413');
+  coverGradient.addColorStop(1, '#463720');
+  canvasFillRoundRect(context, sheetX, sheetY, sheetWidth, coverHeight, 22, coverGradient as unknown as string);
+  context.fillStyle = coverGradient;
+  context.fillRect(sheetX, sheetY + 22, sheetWidth, coverHeight - 22);
+  context.strokeStyle = 'rgba(236, 197, 102, 0.32)';
+  context.lineWidth = 1;
+  context.beginPath();
+  context.arc(sheetX + sheetWidth - 80, sheetY + coverHeight - 10, 116, 0, Math.PI * 2);
+  context.stroke();
+
+  setCanvasFont(context, 14, 500);
+  context.fillStyle = 'rgba(255, 250, 240, 0.86)';
+  context.fillText('八字命理学 · 专业交付报告', contentX, sheetY + 38);
+  const badgeWidth = Math.max(112, context.measureText(taskTitle).width + 28);
+  const badgeX = contentX + contentWidth - badgeWidth;
+  const badgeY = sheetY + 30;
+  canvasFillRoundRect(context, badgeX, badgeY, badgeWidth, 32, 16, 'rgba(255, 250, 240, 0.10)');
+  context.strokeStyle = 'rgba(255, 250, 240, 0.28)';
+  context.stroke();
+  context.fillStyle = '#fffaf0';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(taskTitle, badgeX + badgeWidth / 2, badgeY + 16);
+  context.textAlign = 'left';
+  context.textBaseline = 'top';
+
+  drawCanvasText(context, [{ text: title, bold: true }], contentX, sheetY + 92, 760, {
+    size: 42,
+    lineHeight: 52,
+    color: '#fffaf0',
+    weight: 700
+  });
+  drawCanvasText(context, [{ text: subtitle }], contentX, sheetY + 154, 720, {
+    size: 17,
+    lineHeight: 29,
+    color: 'rgba(255, 250, 240, 0.78)'
+  });
+
+  let y = sheetY + coverHeight;
+  context.fillStyle = '#f7f4ed';
+  context.fillRect(sheetX, y, sheetWidth, 92);
+  const metaItems = reportMetaItems(message);
+  const metaWidth = sheetWidth / 4;
+  metaItems.forEach((item, index) => {
+    const x = sheetX + index * metaWidth + 24;
+    setCanvasFont(context, 12, 700);
+    context.fillStyle = '#8b857b';
+    context.fillText(item.label, x, y + 22);
+    drawCanvasText(context, [{ text: item.value, bold: true }], x, y + 46, metaWidth - 38, {
+      size: 16,
+      lineHeight: 22,
+      color: '#1a1815',
+      weight: 700
+    });
+  });
+  y += 116;
+
+  const pillarGap = 12;
+  const pillarWidth = (sheetWidth - 64 - pillarGap * 3) / 4;
+  pillarRows.value.forEach((pillar, index) => {
+    const x = sheetX + 32 + index * (pillarWidth + pillarGap);
+    canvasFillRoundRect(context, x, y, pillarWidth, 104, 14, '#fffdf8');
+    canvasStrokeRoundRect(context, x, y, pillarWidth, 104, 14, '#ded8cc');
+    setCanvasFont(context, 12, 700);
+    context.fillStyle = '#8b857b';
+    context.textAlign = 'center';
+    context.fillText(pillar.label, x + pillarWidth / 2, y + 14);
+    const charGap = 8;
+    const charWidth = (pillarWidth - 28 - charGap) / 2;
+    const charY = y + 34;
+    [
+      { value: pillar.gan, element: pillar.ganElement, x: x + 14 },
+      { value: pillar.zhi, element: pillar.zhiElement, x: x + 14 + charWidth + charGap }
+    ].forEach((item) => {
+      const visual = ELEMENT_VISUALS[item.element];
+      canvasFillRoundRect(context, item.x, charY, charWidth, 58, 10, visual.tint);
+      canvasStrokeRoundRect(context, item.x, charY, charWidth, 58, 10, visual.soft);
+      setCanvasFont(context, 30, 700, '"Songti SC", SimSun, serif');
+      context.fillStyle = visual.color;
+      context.textBaseline = 'middle';
+      context.fillText(item.value, item.x + charWidth / 2, charY + 24);
+      setCanvasFont(context, 12, 700);
+      context.fillText(item.element, item.x + charWidth / 2, charY + 47);
+      context.textBaseline = 'top';
+    });
+    context.textAlign = 'left';
+  });
+  y += 122;
+
+  const summaryItems = reportSummaryItems();
+  const summaryGap = 12;
+  const summaryWidth = (sheetWidth - 64 - summaryGap * 2) / 3;
+  summaryItems.forEach((item, index) => {
+    const x = sheetX + 32 + index * (summaryWidth + summaryGap);
+    canvasFillRoundRect(context, x, y, summaryWidth, 76, 14, '#fffdf8');
+    canvasStrokeRoundRect(context, x, y, summaryWidth, 76, 14, '#ded8cc');
+    setCanvasFont(context, 12, 700);
+    context.fillStyle = '#8b857b';
+    context.fillText(item.label, x + 16, y + 14);
+    drawCanvasText(context, [{ text: item.value, bold: true }], x + 16, y + 38, summaryWidth - 32, {
+      size: 16,
+      lineHeight: 22,
+      color: '#1a1815',
+      weight: 700
+    });
+  });
+  y += 112;
+
+  for (const block of parseMarkdown(cleanVisibleReportContent(message.content))) {
+    if (block.type === 'heading') {
+      const size = block.level <= 2 ? 25 : 20;
+      y += 20;
+      y = drawCanvasText(context, flattenInlineText(block.children).map((token) => ({ ...token, bold: true })), contentX, y, contentWidth, {
+        size,
+        lineHeight: Math.round(size * 1.35),
+        color: '#171512',
+        weight: 700
+      });
+      y += 10;
+    } else if (block.type === 'list') {
+      block.items.forEach((item, index) => {
+        setCanvasFont(context, 16, 700);
+        context.fillStyle = '#8f672e';
+        context.fillText(block.ordered ? `${index + 1}.` : '•', contentX, y + 3);
+        y = drawCanvasText(context, flattenInlineText(item), contentX + 28, y, contentWidth - 28, {
+          size: 16,
+          lineHeight: 28,
+          color: '#34312d'
+        }) + 4;
+      });
+      y += 6;
+    } else if (block.type === 'blockquote') {
+      const h = measureCanvasText(context, flattenInlineText(block.children), contentWidth - 34, 16, 28) + 28;
+      canvasFillRoundRect(context, contentX, y, contentWidth, h, 10, '#f7f2e8');
+      context.fillStyle = '#b78949';
+      context.fillRect(contentX, y + 12, 4, h - 24);
+      drawCanvasText(context, flattenInlineText(block.children), contentX + 18, y + 14, contentWidth - 34, {
+        size: 16,
+        lineHeight: 28,
+        color: '#34312d'
+      });
+      y += h + 14;
+    } else if (block.type === 'code') {
+      const h = measureCanvasText(context, [{ text: block.code }], contentWidth - 28, 14, 24) + 24;
+      canvasFillRoundRect(context, contentX, y, contentWidth, h, 10, '#f7f4ed');
+      drawCanvasText(context, [{ text: block.code }], contentX + 14, y + 12, contentWidth - 28, {
+        size: 14,
+        lineHeight: 24,
+        color: '#34312d'
+      });
+      y += h + 14;
+    } else if (block.type === 'hr') {
+      context.strokeStyle = '#ded8cc';
+      context.beginPath();
+      context.moveTo(contentX, y + 12);
+      context.lineTo(contentX + contentWidth, y + 12);
+      context.stroke();
+      y += 28;
+    } else {
+      y = drawCanvasText(context, flattenInlineText(block.children), contentX, y, contentWidth, {
+        size: 16,
+        lineHeight: 29,
+        color: '#34312d'
+      }) + 10;
+    }
+  }
+
+  context.fillStyle = '#f7f4ed';
+  context.fillRect(sheetX, height - 88 - 56, sheetWidth, 56);
+  setCanvasFont(context, 12, 400);
+  context.fillStyle = '#8b857b';
+  context.fillText('本报告由八字命理学工作台生成，仅供命理研究与自我规划参考。', sheetX + 32, height - 88 - 36);
+  context.textAlign = 'right';
+  context.fillText(new Date().toLocaleDateString('zh-CN'), sheetX + sheetWidth - 32, height - 88 - 36);
+  context.textAlign = 'left';
+}
+
+function createReportCanvas(message: ChatMessage) {
+  const width = 1120;
+  const measureCanvas = document.createElement('canvas');
+  const measureContext = measureCanvas.getContext('2d');
+  if (!measureContext) throw new Error('浏览器不支持报告导出');
+  const height = estimateReportImageHeight(measureContext, message, width - 184);
+  if (height > 12000) throw new Error('报告内容较长，建议使用 PDF 打印页导出');
+  const scale = window.devicePixelRatio > 1 ? 1.5 : 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('浏览器不支持报告导出');
+  context.setTransform(scale, 0, 0, scale, 0, 0);
+  drawCanvasReport(context, message, width, height);
+  return {
+    canvas,
+    width,
+    height,
+    scale
+  };
+}
+
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `${sanitizeFilename(title)}.md`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-  setMessage('报告已导出为 Markdown');
+}
+
+function dataUrlToBytes(dataUrl: string) {
+  const base64 = dataUrl.split(',')[1] ?? '';
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function asciiBytes(value: string) {
+  const bytes = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) {
+    bytes[index] = value.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+}
+
+function concatBytes(chunks: Uint8Array[]) {
+  const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const result = new Uint8Array(length);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return result;
+}
+
+async function createPdfFromReportCanvas(report: { canvas: HTMLCanvasElement; width: number; height: number; scale: number }) {
+  const pageWidthPt = 595.28;
+  const pageHeightPt = 841.89;
+  const sourceWidth = report.canvas.width;
+  const sourceHeight = report.canvas.height;
+  const pagePixelHeight = Math.round(sourceWidth * (pageHeightPt / pageWidthPt));
+  const pageCount = Math.ceil(sourceHeight / pagePixelHeight);
+  const pageImages: Array<{ bytes: Uint8Array; width: number; height: number }> = [];
+
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+    const pageCanvas = document.createElement('canvas');
+    pageCanvas.width = sourceWidth;
+    pageCanvas.height = pagePixelHeight;
+    const pageContext = pageCanvas.getContext('2d');
+    if (!pageContext) throw new Error('浏览器不支持 PDF 生成');
+    pageContext.fillStyle = '#ece8df';
+    pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+    const sourceY = pageIndex * pagePixelHeight;
+    const sliceHeight = Math.min(pagePixelHeight, sourceHeight - sourceY);
+    pageContext.drawImage(report.canvas, 0, sourceY, sourceWidth, sliceHeight, 0, 0, sourceWidth, sliceHeight);
+    pageImages.push({
+      bytes: dataUrlToBytes(pageCanvas.toDataURL('image/jpeg', 0.92)),
+      width: pageCanvas.width,
+      height: pageCanvas.height
+    });
+  }
+
+  const chunks: Uint8Array[] = [];
+  const offsets: number[] = [0];
+  let byteLength = 0;
+  const push = (chunk: string | Uint8Array) => {
+    const bytes = typeof chunk === 'string' ? asciiBytes(chunk) : chunk;
+    chunks.push(bytes);
+    byteLength += bytes.length;
+  };
+  const addObject = (objectNumber: number, body: Array<string | Uint8Array>) => {
+    offsets[objectNumber] = byteLength;
+    push(`${objectNumber} 0 obj\n`);
+    body.forEach(push);
+    push('\nendobj\n');
+  };
+
+  const pageObjectNumbers = pageImages.map((_, index) => 3 + index * 3);
+  const objectCount = 2 + pageImages.length * 3;
+  push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  addObject(1, ['<< /Type /Catalog /Pages 2 0 R >>']);
+  addObject(2, [`<< /Type /Pages /Kids [${pageObjectNumbers.map((objectNumber) => `${objectNumber} 0 R`).join(' ')}] /Count ${pageImages.length} >>`]);
+
+  pageImages.forEach((image, index) => {
+    const pageObject = 3 + index * 3;
+    const contentObject = pageObject + 1;
+    const imageObject = pageObject + 2;
+    const imageName = `Im${index + 1}`;
+    const content = `q\n${pageWidthPt} 0 0 ${pageHeightPt} 0 0 cm\n/${imageName} Do\nQ`;
+    addObject(pageObject, [
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidthPt} ${pageHeightPt}] /Resources << /XObject << /${imageName} ${imageObject} 0 R >> >> /Contents ${contentObject} 0 R >>`
+    ]);
+    addObject(contentObject, [`<< /Length ${asciiBytes(content).length} >>\nstream\n${content}\nendstream`]);
+    addObject(imageObject, [
+      `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.length} >>\nstream\n`,
+      image.bytes,
+      '\nendstream'
+    ]);
+  });
+
+  const xrefOffset = byteLength;
+  push(`xref\n0 ${objectCount + 1}\n`);
+  push('0000000000 65535 f \n');
+  for (let objectNumber = 1; objectNumber <= objectCount; objectNumber += 1) {
+    push(`${String(offsets[objectNumber]).padStart(10, '0')} 00000 n \n`);
+  }
+  push(`trailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+  return new Blob([concatBytes(chunks)], { type: 'application/pdf' });
+}
+
+async function exportReportImage() {
+  const message = latestExportableReport.value;
+  if (!message) {
+    setMessage('请先生成专业报告或流派会诊，命盘速览不支持导出');
+    return;
+  }
+  try {
+    const reportCanvas = createReportCanvas(message);
+    const blob = await new Promise<Blob | null>((resolve) => reportCanvas.canvas.toBlob(resolve, 'image/png', 0.96));
+    if (!blob) throw new Error('报告图片生成失败');
+    downloadBlob(blob, `${sanitizeFilename(`${birthTriggerLabel.value}-${reportTaskTitle(message.metadata?.task)}`)}.png`);
+    setMessage('报告长图已导出');
+  } catch (error: any) {
+    setMessage(error?.message ?? '报告图片生成失败，请改用 PDF 导出');
+  }
 }
 
 function openSettings() {
@@ -1745,9 +2622,15 @@ async function requestReading(task: FortuneTask, question?: string) {
         void scrollAnswerToBottom();
       }
     });
+    const visibleText = cleanVisibleReportContent(fullText);
     roleHistory.value = await appendRoleMessage(selectedPersona.value.id, {
       role: 'assistant',
-      content: fullText
+      content: visibleText,
+      metadata: {
+        task,
+        productTitle: reportTaskTitle(task),
+        exportable: isReportExportTask(task)
+      }
     });
     registerCommercialUsage(task);
     readingText.value = '';
@@ -2365,7 +3248,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <div class="history-body">
-              <MarkdownRenderer :blocks="parseMarkdown(message.content)" />
+              <MarkdownRenderer :blocks="parseMarkdown(cleanVisibleReportContent(message.content))" />
             </div>
           </article>
           <p v-if="!historyMessages.length" class="empty-state history-empty">还没有解读记录。完成一次解读或追问后会出现在这里。</p>
@@ -3070,7 +3953,7 @@ onBeforeUnmount(() => {
             </section>
             <p v-for="note in chart.notes" :key="note" class="note-line">{{ note }}</p>
             <div class="actions-row chart-service-actions">
-              <button class="primary-button commercial-action-button chart-overview-action" type="button" :disabled="streaming" @click="requestReading('bazi_full')">
+              <button class="primary-button commercial-action-button chart-overview-action" type="button" :disabled="streaming" @click="requestChartOverview">
                 <Wand2 :size="18" aria-hidden="true" />
                 <span>{{ t('home.fullReading') }}</span>
                 <small>{{ productAccessLabel('bazi_full') }}</small>
@@ -3122,10 +4005,17 @@ onBeforeUnmount(() => {
                 <small>{{ selectedPersona ? engineNameById(selectedPersona.engineId) : '' }} · {{ birthTriggerLabel }}</small>
               </div>
             </div>
-            <button class="ghost-button export-button" type="button" :disabled="streaming || !latestAssistantReading()" @click="exportCurrentReading">
-              <Download :size="16" aria-hidden="true" />
-              {{ t('home.exportMarkdown') }}
-            </button>
+            <div v-if="latestExportableReport" class="report-export-actions" aria-label="报告导出">
+              <button class="ghost-button export-button" type="button" :disabled="streaming" @click="exportReportPdf">
+                <FileText :size="16" aria-hidden="true" />
+                PDF
+              </button>
+              <button class="ghost-button export-button" type="button" :disabled="streaming" @click="exportReportImage">
+                <Download :size="16" aria-hidden="true" />
+                图片
+              </button>
+            </div>
+            <span v-else class="report-export-hint">专业报告/流派会诊可导出</span>
           </div>
           <div class="mobile-reading-prompts reading-prompt-strip" aria-label="快捷解读问题">
             <button class="secondary-button commercial-action-button" type="button" :disabled="!chart || streaming" @click="requestReading('bazi_full')">
@@ -3159,7 +4049,7 @@ onBeforeUnmount(() => {
               <article v-for="message in historyMessages.slice(-10)" :key="message.id" :class="['chat-message', `chat-${message.role}`]">
                 <div class="chat-speaker">{{ message.role === 'user' ? '我' : selectedPersona?.name ?? t('home.masterFallback') }}</div>
                 <div class="chat-bubble">
-                  <MarkdownRenderer :blocks="parseMarkdown(message.content)" />
+                  <MarkdownRenderer :blocks="parseMarkdown(cleanVisibleReportContent(message.content))" />
                 </div>
               </article>
               <article v-if="readingText" class="chat-message chat-assistant chat-streaming">

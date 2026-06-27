@@ -6,6 +6,11 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  metadata?: {
+    task?: string;
+    productTitle?: string;
+    exportable?: boolean;
+  };
 }
 
 export interface LifeEvent {
